@@ -3,6 +3,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import logo from '@/public/logo.png'
 import { login, signup } from './actions'
+import { SubmitButton } from '@/components/submit-button'
 
 export default async function LoginPage({
   searchParams,
@@ -87,12 +88,7 @@ export default async function LoginPage({
             />
           </label>
 
-          <Button
-            type="submit"
-            className="mt-2 bg-yellow-400 text-black hover:bg-yellow-500 font-semibold"
-          >
-            {isSignup ? 'Criar conta' : 'Entrar'}
-          </Button>
+         <SubmitButton isSignup={isSignup} />
 
           <p className="text-center text-zinc-400 text-sm">
             {isSignup ? 'Já tem conta?' : 'Ainda não tem conta?'}{' '}
