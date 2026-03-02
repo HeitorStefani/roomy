@@ -120,7 +120,12 @@ export default function EstoqueClient({ data }: { data: EstoqueData }) {
   const router              = useRouter()
   const [, startTransition] = useTransition()
 
-  const { userId, houseId, casa, pessoal } = data
+  const { userId, houseId, casa, pessoal } = data as {
+  userId: string
+  houseId: string
+  casa: StockItem[]
+  pessoal: StockItem[]
+}
 
   const [tab,            setTab]            = useState<StockTab>('casa')
   const [search,         setSearch]         = useState('')
@@ -135,7 +140,7 @@ export default function EstoqueClient({ data }: { data: EstoqueData }) {
     name: '', category: 'Limpeza', quantity: '', minQuantity: '', unit: 'un',
   })
 
-  const currentItems = tab === 'casa' ? casa : pessoal
+  const currentItems: StockItem[] = tab === 'casa' ? casa : pessoal
   const categories   = tab === 'casa' ? CATEGORIES_CASA : CATEGORIES_PESSOAL
 
   const filtered = currentItems.filter(i => {

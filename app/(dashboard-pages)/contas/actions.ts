@@ -91,3 +91,17 @@ export async function deleteBudgetCategory(categoryId: string) {
   await supabase.from('budget_categories').delete().eq('id', categoryId)
   revalidatePath('/contas')
 }
+
+export async function deleteBill(billId: string) {
+  const supabase = await createClient()
+  // Deleta participantes primeiro (FK constraint)
+  await supabase.from('bill_participants').delete().eq('bill_id', billId)
+  await supabase.from('house_bills').delete().eq('id', billId)
+  revalidatePath('/contas')
+}
+
+export async function deleteTransaction(txId: string) {
+  const supabase = await createClient()
+  await supabase.from('personal_transactions').delete().eq('id', txId)
+  revalidatePath('/contas')
+}

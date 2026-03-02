@@ -35,7 +35,9 @@ type Status      = 'todo' | 'doing' | 'done'
 type Priority    = 'alta' | 'média' | 'baixa'
 type Recurrence  = 'única' | 'semanal' | 'mensal'
 
-type Task = TarefasData['tasks'][number]
+type Task    = TarefasData['tasks'][number]
+type Morador = TarefasData['moradores'][number]
+type HistoryItem = TarefasData['history'][number]
 
 const ROOMS = ['Cozinha', 'Banheiro', 'Sala', 'Quintal', 'Geral']
 
@@ -56,14 +58,14 @@ function TaskCardInner({
   task, moradores, userId, onMove, isDragOverlay = false, dragListeners, dragAttributes,
 }: {
   task: Task
-  moradores: TarefasData['moradores']
+  moradores: Morador[]
   userId: string
   onMove: (id: string, status: Status) => void
   isDragOverlay?: boolean
   dragListeners?: any
   dragAttributes?: any
 }) {
-  const morador = moradores.find(m => m.id === task.assignedTo)
+  const morador = moradores.find((m: Morador) => m.id === task.assignedTo)
   const isMe    = task.assignedTo === userId
   const next: Record<Status, Status | null> = { todo: 'doing', doing: 'done', done: null }
   const nextStatus = next[task.status as Status]
@@ -134,7 +136,7 @@ function TaskCardInner({
 // ── Draggable wrapper ─────────────────────────────────────────────────────────
 function DraggableCard({ task, moradores, userId, onMove }: {
   task: Task
-  moradores: TarefasData['moradores']
+  moradores: Morador[]
   userId: string
   onMove: (id: string, status: Status) => void
 }) {
@@ -150,7 +152,7 @@ function DraggableCard({ task, moradores, userId, onMove }: {
 function DroppableColumn({ col, tasks, moradores, userId, onMove, isOver }: {
   col: typeof columns[number]
   tasks: Task[]
-  moradores: TarefasData['moradores']
+  moradores: Morador[]
   userId: string
   onMove: (id: string, status: Status) => void
   isOver: boolean
@@ -186,12 +188,12 @@ function DroppableColumn({ col, tasks, moradores, userId, onMove, isOver }: {
 function HistorySidebarContent({ history, tasks, moradores, userId }: {
   history: TarefasData['history']
   tasks: TarefasData['tasks']
-  moradores: TarefasData['moradores']
+  moradores: Morador[]
   userId: string
 }) {
-  const scoreboard = [...moradores].map(m => ({
+  const scoreboard = [...moradores].map((m: Morador) => ({
     ...m,
-    done: history.filter(h => h.doneBy === m.id).length,
+    done: history.filter((h: HistoryItem) => h.doneBy === m.id).length,
   })).sort((a, b) => b.done - a.done)
 
   return (
@@ -224,9 +226,9 @@ function HistorySidebarContent({ history, tasks, moradores, userId }: {
           <CardDescription className="text-zinc-500 text-xs">Quando concluída, passa para:</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
-          {tasks.filter(t => t.recurrence !== 'única' && t.status !== 'done').slice(0, 4).map(t => {
+          {tasks.filter((t: Task) => t.recurrence !== 'única' && t.status !== 'done').slice(0, 4).map((t: Task) => {
             const sortedMoradores = [...moradores].sort((a, b) => a.name.localeCompare(b.name))
-            const currIdx = sortedMoradores.findIndex(m => m.id === t.assignedTo)
+            const currIdx = sortedMoradores.findIndex((m: Morador) => m.id === t.assignedTo)
             const nextM   = sortedMoradores[(currIdx + 1) % sortedMoradores.length]
             return (
               <div key={t.id} className="flex items-center gap-2 bg-zinc-900 p-2 rounded-lg">
@@ -252,8 +254,8 @@ function HistorySidebarContent({ history, tasks, moradores, userId }: {
           {history.length === 0 ? (
             <p className="text-zinc-600 text-xs text-center py-4">Nenhuma tarefa concluída ainda.</p>
           ) : (
-            history.slice(0, 6).map(h => {
-              const m = moradores.find(x => x.id === h.doneBy)
+            history.slice(0, 6).map((h: HistoryItem) => {
+              const m = moradores.find((x: Morador) => x.id === h.doneBy)
               return (
                 <div key={h.id} className="flex items-start gap-2">
                   <div className={`w-5 h-5 rounded-full ${m?.avatar_color ?? 'bg-zinc-600'} flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0 mt-0.5`}>
@@ -279,7 +281,13 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
   const router              = useRouter()
   const [, startTransition] = useTransition()
 
-  const { userId, profile, moradores, tasks, history } = data
+  const { userId, profile, moradores, tasks, history } = data as {
+    userId: string
+    profile: TarefasData['profile']
+    moradores: Morador[]
+    tasks: Task[]
+    history: TarefasData['history']
+  }
 
   const [filterMorador,    setFilterMorador]    = useState('todos')
   const [filterRecurrence, setFilterRecurrence] = useState('todas')
@@ -407,7 +415,7 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
                       <Select value={form.assignedTo} onValueChange={v => setForm(f => ({ ...f, assignedTo: v }))}>
                         <SelectTrigger className="bg-zinc-700 border-zinc-600 text-white"><SelectValue /></SelectTrigger>
                         <SelectContent className="bg-zinc-700 border-zinc-600">
-                          {moradores.map(m => (
+                          {moradores.map((m: Morador) => (
                             <SelectItem key={m.id} value={m.id} className="text-zinc-200">{m.name.split(' ')[0]}</SelectItem>
                           ))}
                         </SelectContent>
@@ -478,8 +486,8 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
             <ListFilter className="w-4 h-4" /> Filtrar:
           </span>
           <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap scrollbar-none">
-            {['todos', ...moradores.map(m => m.id)].map(id => {
-              const m = moradores.find(x => x.id === id)
+            {['todos', ...moradores.map((m: Morador) => m.id)].map(id => {
+              const m = moradores.find((x: Morador) => x.id === id)
               return (
                 <button key={id} onClick={() => setFilterMorador(id)}
                   className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all flex-shrink-0 ${

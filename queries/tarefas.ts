@@ -52,7 +52,7 @@ export async function getTarefasData() {
     })),
     history: (history ?? []).map(h => ({
       id:        h.id,
-      taskTitle: (h.tasks as unknown)?.title ?? '—',
+      taskTitle: (h.tasks as { title?: string } | null)?.title ?? '—',
       doneBy:    h.done_by,
       doneAt:    new Date(h.done_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
     })),
