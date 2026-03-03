@@ -102,8 +102,25 @@ function QrScanner({ onResult, active }: { onResult: (url: string) => void; acti
         const scanner = new Html5Qrcode('nfce-qr-reader')
         scannerRef.current = scanner
         await scanner.start(
-          { facingMode: 'environment' },
-          { fps: 10, qrbox: { width: 220, height: 220 } },
+          {
+            facingMode: 'environment',
+            // Força a maior resolução que a câmera suportar
+            videoConstraints: {
+              facingMode: { ideal: 'environment' },
+              width:  { min: 640, ideal: 1920, max: 3840 },
+              height: { min: 480, ideal: 1080, max: 2160 },
+              aspectRatio: { ideal: 16 / 9 },
+              // Desativa HDR/processamento que reduz nitidez em câmeras móveis
+              advanced: [{ zoom: 1 }],
+            },
+          },
+          {
+            fps: 15,
+            // qrbox maior = área de leitura maior, aproveita mais pixels
+            qrbox: { width: 300, height: 300 },
+            // Sem disableFlip para não perder frames invertidos
+            disableFlip: false,
+          },
           (text: string) => {
             if (calledRef.current || !text.startsWith('http')) return
             calledRef.current = true
