@@ -99,15 +99,30 @@ function QrScanner({ onResult, active }: { onResult: (url: string) => void; acti
         const { Html5Qrcode } = await import('html5-qrcode')
         const el = document.getElementById('nfce-qr-reader')
         if (!el) return
+
+        // Lista câmeras disponíveis e tenta achar a lente principal (não grande angular)
+        const devices = await Html5Qrcode.getCameras()
+        console.log('[QrScanner] câmeras disponíveis:', devices)
+
+        const mainCam = devices.find(d => {
+          const label = d.label.toLowerCase()
+          return (
+            (label.includes('back') || label.includes('rear') || label.includes('traseira')) &&
+            !label.includes('ultra') &&
+            !label.includes('wide') &&
+            !label.includes('macro') &&
+            !label.includes('depth')
+          )
+        }) ?? devices.find(d => d.label.toLowerCase().includes('back'))
+          ?? devices[devices.length - 1] // fallback: última câmera (geralmente traseira principal)
+
+        console.log('[QrScanner] câmera selecionada:', mainCam)
+
         const scanner = new Html5Qrcode('nfce-qr-reader')
         scannerRef.current = scanner
+
         await scanner.start(
-          {
-            facingMode: { ideal: 'environment' },
-            width:  { min: 640, ideal: 1920, max: 3840 },
-            height: { min: 480, ideal: 1080, max: 2160 },
-            aspectRatio: { ideal: 16 / 9 },
-          } as MediaTrackConstraints,
+          mainCam?.id ?? { facingMode: { ideal: 'environment' } },
           {
             fps: 15,
             qrbox: { width: 300, height: 300 },
