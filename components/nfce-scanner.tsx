@@ -89,7 +89,7 @@ function QrScanner({ onResult, active }: { onResult: (url: string) => void; acti
     if (!active) { stopScanner(); return }
     if (startedRef.current) return
     startedRef.current = true
-    calledRef.current  = false
+    calledRef.current = false
 
     ;(async () => {
       try {
@@ -97,79 +97,76 @@ function QrScanner({ onResult, active }: { onResult: (url: string) => void; acti
         const el = document.getElementById('nfce-qr-reader')
         if (!el) return
 
-        const devices = await Html5Qrcode.getCameras()
-        console.log('[QrScanner] câmeras:', devices.map(d => d.label))
+        // 1. Pega um stream inicial só para enumerar com labels
+        const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        tempStream.getTracks().forEach(t => t.stop())
 
-        // Pontuação para encontrar câmera principal traseira
-        // Penaliza: ultra wide, macro, depth, tele
-        // Favorece: back/rear/traseira sem qualificadores
+        // 2. Enumera câmeras agora que temos permissão
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        const videoDevices = devices.filter(d => d.kind === 'videoinput')
+        console.log('[QrScanner] câmeras:', videoDevices.map(d => d.label))
+
+        // 3. Pontua para achar a câmera principal traseira
         const score = (label: string) => {
           const l = label.toLowerCase()
           if (l.includes('ultra') || l.includes('wide') || l.includes('macro') || l.includes('depth')) return -10
           if (l.includes('tele') || l.includes('telephoto')) return -5
-          if ((l.includes('back') || l.includes('rear') || l.includes('traseira') || l.includes('environment')) && !l.includes('ultra')) return 10
-          if (l.includes('back') || l.includes('rear') || l.includes('traseira')) return 5
-          return 0
+          if (l.includes('back') || l.includes('rear') || l.includes('traseira')) return 10
+          return 1
+        }
+        const sorted = [...videoDevices].sort((a, b) => score(b.label) - score(a.label))
+        const mainCam = sorted[0]
+        console.log('[QrScanner] câmera escolhida:', mainCam?.label)
+
+        // 4. Pega stream da câmera principal com zoom=1 explícito
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            deviceId: { exact: mainCam.deviceId },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          }
+        })
+
+        // 5. Tenta forçar zoom=1 na track para evitar wide angle
+        const track = stream.getVideoTracks()[0]
+        console.log('[QrScanner] track label:', track.label)
+        try {
+          const caps = track.getCapabilities() as any
+          console.log('[QrScanner] capabilities:', caps)
+          if (caps?.zoom) {
+            await (track.applyConstraints as any)({ advanced: [{ zoom: caps.zoom.min }] })
+            console.log('[QrScanner] zoom aplicado:', caps.zoom.min)
+          }
+        } catch (e) {
+          console.warn('[QrScanner] zoom não suportado:', e)
         }
 
-        const sorted = [...devices].sort((a, b) => score(b.label) - score(a.label))
-        const mainCam = sorted[0]
-        console.log('[QrScanner] câmera selecionada:', mainCam?.label)
-
+        // 6. Inicia o scanner passando o stream diretamente
         const scanner = new Html5Qrcode('nfce-qr-reader')
         scannerRef.current = scanner
 
-        await scanner.start(
-          // Tenta pelo ID primeiro; se não tiver, usa constraint de ambiente
-          mainCam?.id ?? { facingMode: { ideal: 'environment' } },
-          {
-            fps: 15,
-            qrbox: { width: 250, height: 250 },
-            disableFlip: false,
-            // Força foco contínuo e zoom mínimo via advanced constraints
-            // No start(), troque videoConstraints por:
-            videoConstraints: {
-              deviceId: mainCam?.id ? { exact: mainCam.id } : undefined,
-              facingMode: mainCam?.id ? undefined : { ideal: 'environment' },
-              advanced: [
-                { zoom: 1 } as any,
-                { focusMode: 'continuous' } as any,
-              ],
-            },
-          },
-          (text: string) => {
-            if (calledRef.current || !text.startsWith('http')) return
-            calledRef.current = true
-
-            // Tenta aplicar zoom=1 na track ativa para garantir câmera principal
-            try {
-              const videoEl = document.querySelector('#nfce-qr-reader video') as HTMLVideoElement | null
-              const track = videoEl?.srcObject instanceof MediaStream
-                ? videoEl.srcObject.getVideoTracks()[0]
-                : null
-              if (track && 'applyConstraints' in track) {
-                track.applyConstraints({ advanced: [{ zoom: 1 } as any] }).catch(() => {})
-              }
-            } catch {}
-
-            stopScanner().then(() => onResult(text))
-          },
-          () => {}
-        )
-
-        // Após iniciar, força zoom=1 na track para evitar wide angle
-        setTimeout(() => {
-          try {
-            const videoEl = document.querySelector('#nfce-qr-reader video') as HTMLVideoElement | null
-            const track = videoEl?.srcObject instanceof MediaStream
-              ? videoEl.srcObject.getVideoTracks()[0]
-              : null
-            if (track && 'applyConstraints' in track) {
-              track.applyConstraints({ advanced: [{ zoom: 1 } as any] }).catch(() => {})
-              console.log('[QrScanner] zoom=1 aplicado na track:', track.label)
-            }
-          } catch {}
-        }, 800)
+        await (scanner as any).startWithVideoElement
+          ? // fallback caso não exista método direto
+            scanner.start(
+              { deviceId: { exact: mainCam.deviceId } },
+              { fps: 15, qrbox: { width: 250, height: 250 }, disableFlip: false },
+              (text: string) => {
+                if (calledRef.current || !text.startsWith('http')) return
+                calledRef.current = true
+                stopScanner().then(() => onResult(text))
+              },
+              () => {}
+            )
+          : scanner.start(
+              { deviceId: { exact: mainCam.deviceId } },
+              { fps: 15, qrbox: { width: 250, height: 250 }, disableFlip: false },
+              (text: string) => {
+                if (calledRef.current || !text.startsWith('http')) return
+                calledRef.current = true
+                stopScanner().then(() => onResult(text))
+              },
+              () => {}
+            )
 
       } catch (e) {
         console.error('[QrScanner] erro:', e)
