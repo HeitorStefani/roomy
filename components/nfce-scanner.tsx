@@ -67,22 +67,33 @@ const categoryBg: Record<string, string> = {
 // ── QR Scanner ────────────────────────────────────────────────────────────────
 
 function QrScanner({ onResult, active }: { onResult: (url: string) => void; active: boolean }) {
-  const scannerRef = useRef<any>(null)
-  const calledRef  = useRef(false)
-  const startedRef = useRef(false)
+  const scannerRef  = useRef<any>(null)
+  const trackRef    = useRef<MediaStreamTrack | null>(null)
+  const calledRef   = useRef(false)
+  const startedRef  = useRef(false)
   const [camError, setCamError] = useState<string | null>(null)
+  const [zoomLevel, setZoomLevel] = useState(1)
+  const [zoomRange, setZoomRange] = useState<{ min: number; max: number } | null>(null)
 
   const stopScanner = useCallback(async () => {
     const s = scannerRef.current
     if (!s) return
     try {
-      if (typeof s.getState === 'function' && (s.getState() === 2 || s.getState() === 3)) {
-        await s.stop()
-      }
+      if (typeof s.getState === 'function' && (s.getState() === 2 || s.getState() === 3)) await s.stop()
       if (typeof s.clear === 'function') s.clear()
     } catch {}
     scannerRef.current = null
+    trackRef.current = null
     startedRef.current = false
+  }, [])
+
+  const applyZoom = useCallback(async (zoom: number) => {
+    const track = trackRef.current
+    if (!track) return
+    try {
+      await (track.applyConstraints as any)({ advanced: [{ zoom }] })
+      setZoomLevel(zoom)
+    } catch {}
   }, [])
 
   useEffect(() => {
@@ -97,16 +108,13 @@ function QrScanner({ onResult, active }: { onResult: (url: string) => void; acti
         const el = document.getElementById('nfce-qr-reader')
         if (!el) return
 
-        // 1. Pega um stream inicial só para enumerar com labels
+        // Permissão + enumeração
         const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
         tempStream.getTracks().forEach(t => t.stop())
 
-        // 2. Enumera câmeras agora que temos permissão
         const devices = await navigator.mediaDevices.enumerateDevices()
         const videoDevices = devices.filter(d => d.kind === 'videoinput')
-        console.log('[QrScanner] câmeras:', videoDevices.map(d => d.label))
 
-        // 3. Pontua para achar a câmera principal traseira
         const score = (label: string) => {
           const l = label.toLowerCase()
           if (l.includes('ultra') || l.includes('wide') || l.includes('macro') || l.includes('depth')) return -10
@@ -114,62 +122,44 @@ function QrScanner({ onResult, active }: { onResult: (url: string) => void; acti
           if (l.includes('back') || l.includes('rear') || l.includes('traseira')) return 10
           return 1
         }
-        const sorted = [...videoDevices].sort((a, b) => score(b.label) - score(a.label))
-        const mainCam = sorted[0]
-        console.log('[QrScanner] câmera escolhida:', mainCam?.label)
+        const mainCam = [...videoDevices].sort((a, b) => score(b.label) - score(a.label))[0]
 
-        // 4. Pega stream da câmera principal com zoom=1 explícito
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            deviceId: { exact: mainCam.deviceId },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          }
-        })
-
-        // 5. Tenta forçar zoom=1 na track para evitar wide angle
-        const track = stream.getVideoTracks()[0]
-        console.log('[QrScanner] track label:', track.label)
-        try {
-          const caps = track.getCapabilities() as any
-          console.log('[QrScanner] capabilities:', caps)
-          if (caps?.zoom) {
-            await (track.applyConstraints as any)({ advanced: [{ zoom: caps.zoom.min }] })
-            console.log('[QrScanner] zoom aplicado:', caps.zoom.min)
-          }
-        } catch (e) {
-          console.warn('[QrScanner] zoom não suportado:', e)
-        }
-
-        // 6. Inicia o scanner passando o stream diretamente
         const scanner = new Html5Qrcode('nfce-qr-reader')
         scannerRef.current = scanner
 
-        await (scanner as any).startWithVideoElement
-          ? // fallback caso não exista método direto
-            scanner.start(
-              { deviceId: { exact: mainCam.deviceId } },
-              { fps: 15, qrbox: { width: 250, height: 250 }, disableFlip: false },
-              (text: string) => {
-                if (calledRef.current || !text.startsWith('http')) return
-                calledRef.current = true
-                stopScanner().then(() => onResult(text))
-              },
-              () => {}
-            )
-          : scanner.start(
-              { deviceId: { exact: mainCam.deviceId } },
-              { fps: 15, qrbox: { width: 250, height: 250 }, disableFlip: false },
-              (text: string) => {
-                if (calledRef.current || !text.startsWith('http')) return
-                calledRef.current = true
-                stopScanner().then(() => onResult(text))
-              },
-              () => {}
-            )
+        await scanner.start(
+          { deviceId: { exact: mainCam.deviceId } },
+          { fps: 15, qrbox: { width: 250, height: 250 }, disableFlip: false },
+          (text: string) => {
+            if (calledRef.current || !text.startsWith('http')) return
+            calledRef.current = true
+            stopScanner().then(() => onResult(text))
+          },
+          () => {}
+        )
+
+        // Captura a track e expõe capabilities de zoom
+        setTimeout(() => {
+          const videoEl = document.querySelector('#nfce-qr-reader video') as HTMLVideoElement | null
+          const track = videoEl?.srcObject instanceof MediaStream
+            ? videoEl.srcObject.getVideoTracks()[0]
+            : null
+          if (!track) return
+          trackRef.current = track
+
+          try {
+            const caps = (track.getCapabilities as any)() as any
+            if (caps?.zoom) {
+              setZoomRange({ min: caps.zoom.min, max: Math.min(caps.zoom.max, 4) })
+              // Começa no zoom mínimo
+              ;(track.applyConstraints as any)({ advanced: [{ zoom: caps.zoom.min }] }).catch(() => {})
+              setZoomLevel(caps.zoom.min)
+            }
+          } catch {}
+        }, 800)
 
       } catch (e) {
-        console.error('[QrScanner] erro:', e)
+        console.error('[QrScanner]', e)
         setCamError('Não foi possível acessar a câmera. Verifique as permissões.')
         startedRef.current = false
       }
@@ -186,27 +176,70 @@ function QrScanner({ onResult, active }: { onResult: (url: string) => void; acti
   )
 
   return (
-    <div className="relative rounded-xl overflow-hidden bg-black">
-      <div id="nfce-qr-reader" className="w-full" />
-      <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-        <div className="absolute inset-0 bg-black/50" style={{
-          maskImage: 'radial-gradient(ellipse 230px 230px at center, transparent 48%, black 62%)',
-          WebkitMaskImage: 'radial-gradient(ellipse 230px 230px at center, transparent 48%, black 62%)',
-        }} />
-        <div className="relative w-[220px] h-[220px]">
-          {[
-            'top-0 left-0 border-t-[3px] border-l-[3px] rounded-tl-xl',
-            'top-0 right-0 border-t-[3px] border-r-[3px] rounded-tr-xl',
-            'bottom-0 left-0 border-b-[3px] border-l-[3px] rounded-bl-xl',
-            'bottom-0 right-0 border-b-[3px] border-r-[3px] rounded-br-xl',
-          ].map((c, i) => <div key={i} className={`absolute w-7 h-7 border-violet-400 ${c}`} />)}
-          <div className="absolute left-2 right-2 h-0.5 bg-gradient-to-r from-transparent via-violet-400 to-transparent animate-[nfcescan_2s_ease-in-out_infinite]" />
+    <div className="space-y-3">
+      <div className="relative rounded-xl overflow-hidden bg-black">
+        <div id="nfce-qr-reader" className="w-full" />
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" style={{
+            maskImage: 'radial-gradient(ellipse 230px 230px at center, transparent 48%, black 62%)',
+            WebkitMaskImage: 'radial-gradient(ellipse 230px 230px at center, transparent 48%, black 62%)',
+          }} />
+          <div className="relative w-[220px] h-[220px]">
+            {[
+              'top-0 left-0 border-t-[3px] border-l-[3px] rounded-tl-xl',
+              'top-0 right-0 border-t-[3px] border-r-[3px] rounded-tr-xl',
+              'bottom-0 left-0 border-b-[3px] border-l-[3px] rounded-bl-xl',
+              'bottom-0 right-0 border-b-[3px] border-r-[3px] rounded-br-xl',
+            ].map((c, i) => <div key={i} className={`absolute w-7 h-7 border-violet-400 ${c}`} />)}
+            <div className="absolute left-2 right-2 h-0.5 bg-gradient-to-r from-transparent via-violet-400 to-transparent animate-[nfcescan_2s_ease-in-out_infinite]" />
+          </div>
         </div>
+        <p className="absolute bottom-2 left-0 right-0 text-center text-zinc-400 text-[10px]">
+          Aponte para o QR code da nota fiscal
+        </p>
+        <style>{`@keyframes nfcescan{0%,100%{top:10px;opacity:.4}50%{top:205px;opacity:1}}`}</style>
       </div>
-      <p className="absolute bottom-2 left-0 right-0 text-center text-zinc-400 text-[10px]">
-        Aponte para o QR code da nota fiscal
-      </p>
-      <style>{`@keyframes nfcescan{0%,100%{top:10px;opacity:.4}50%{top:205px;opacity:1}}`}</style>
+
+      {/* Controle de zoom */}
+      {zoomRange && (
+        <div className="bg-zinc-800 rounded-xl border border-zinc-700/50 px-4 py-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-zinc-500 text-[10px] font-medium uppercase tracking-wider">Zoom</span>
+            <span className="text-zinc-300 text-xs font-semibold">{zoomLevel.toFixed(1)}×</span>
+          </div>
+          <input
+            type="range"
+            min={zoomRange.min}
+            max={zoomRange.max}
+            step={0.1}
+            value={zoomLevel}
+            onChange={e => applyZoom(parseFloat(e.target.value))}
+            className="w-full accent-violet-500 h-1.5 rounded-full cursor-pointer"
+          />
+          <div className="flex gap-2">
+            {[1, 1.5, 2, 2.5].filter(z => z >= zoomRange.min && z <= zoomRange.max).map(z => (
+              <button
+                key={z}
+                onClick={() => applyZoom(z)}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  Math.abs(zoomLevel - z) < 0.1
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-zinc-700 text-zinc-400 hover:text-white'
+                }`}
+              >
+                {z}×
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Fallback se zoom não disponível */}
+      {!zoomRange && (
+        <p className="text-zinc-600 text-[10px] text-center">
+          Aproxime o celular até o QR code preencher a área
+        </p>
+      )}
     </div>
   )
 }
