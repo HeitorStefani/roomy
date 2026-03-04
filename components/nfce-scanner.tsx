@@ -67,106 +67,148 @@ const categoryBg: Record<string, string> = {
 // ── QR Scanner ────────────────────────────────────────────────────────────────
 
 function QrScanner({ onResult, active }: { onResult: (url: string) => void; active: boolean }) {
-  const scannerRef  = useRef<any>(null)
-  const trackRef    = useRef<MediaStreamTrack | null>(null)
+  const videoRef    = useRef<HTMLVideoElement>(null)
+  const streamRef   = useRef<MediaStream | null>(null)
+  const rafRef      = useRef<number>(0)
   const calledRef   = useRef(false)
-  const startedRef  = useRef(false)
-  const [camError, setCamError] = useState<string | null>(null)
+  const [camError,  setCamError]  = useState<string | null>(null)
+  const [ready,     setReady]     = useState(false)
   const [zoomLevel, setZoomLevel] = useState(1)
-  const [zoomRange, setZoomRange] = useState<{ min: number; max: number } | null>(null)
+  const [showZoom,  setShowZoom]  = useState(false)
 
-  const stopScanner = useCallback(async () => {
-    const s = scannerRef.current
-    if (!s) return
-    try {
-      if (typeof s.getState === 'function' && (s.getState() === 2 || s.getState() === 3)) await s.stop()
-      if (typeof s.clear === 'function') s.clear()
-    } catch {}
-    scannerRef.current = null
-    trackRef.current = null
-    startedRef.current = false
+  const stop = useCallback(() => {
+    cancelAnimationFrame(rafRef.current)
+    streamRef.current?.getTracks().forEach(t => t.stop())
+    streamRef.current = null
+    calledRef.current = false
+    setReady(false)
+    setShowZoom(false)
+    setZoomLevel(1)
   }, [])
 
-  const applyZoom = useCallback(async (zoom: number) => {
-    const track = trackRef.current
-    if (!track) return
-    try {
-      await (track.applyConstraints as any)({ advanced: [{ zoom }] })
-      setZoomLevel(zoom)
-    } catch {}
+  const applyZoom = useCallback((zoom: number) => {
+    setZoomLevel(zoom)
+    const track = streamRef.current?.getVideoTracks()[0]
+    if (track) {
+      try { (track.applyConstraints as any)({ advanced: [{ zoom }] }).catch(() => {}) } catch {}
+    }
+    if (videoRef.current) {
+      videoRef.current.style.transform = `scale(${zoom})`
+      videoRef.current.style.transformOrigin = 'center center'
+    }
   }, [])
 
   useEffect(() => {
-    if (!active) { stopScanner(); return }
-    if (startedRef.current) return
-    startedRef.current = true
-    calledRef.current = false
+    if (!active) { stop(); return }
 
     ;(async () => {
       try {
-        const { Html5Qrcode } = await import('html5-qrcode')
-        const el = document.getElementById('nfce-qr-reader')
-        if (!el) return
+        // 1. Permissão inicial
+        const tmp = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        tmp.getTracks().forEach(t => t.stop())
 
-        // Permissão + enumeração
-        const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-        tempStream.getTracks().forEach(t => t.stop())
+        // 2. Enumera câmeras com labels
+        const all = await navigator.mediaDevices.enumerateDevices()
+        const cams = all.filter(d => d.kind === 'videoinput')
+        console.log('[Scanner] câmeras:', cams.map(d => d.label))
 
-        const devices = await navigator.mediaDevices.enumerateDevices()
-        const videoDevices = devices.filter(d => d.kind === 'videoinput')
-
-        const score = (label: string) => {
-          const l = label.toLowerCase()
-          if (l.includes('ultra') || l.includes('wide') || l.includes('macro') || l.includes('depth')) return -10
-          if (l.includes('tele') || l.includes('telephoto')) return -5
-          if (l.includes('back') || l.includes('rear') || l.includes('traseira')) return 10
+        // 3. Escolhe câmera principal traseira
+        const score = (l: string) => {
+          const s = l.toLowerCase()
+          if (s.includes('ultra') || s.includes('wide') || s.includes('macro') || s.includes('depth')) return -10
+          if (s.includes('tele')) return -5
+          if (s.includes('back') || s.includes('rear') || s.includes('traseira')) return 10
           return 1
         }
-        const mainCam = [...videoDevices].sort((a, b) => score(b.label) - score(a.label))[0]
+        const best = [...cams].sort((a, b) => score(b.label) - score(a.label))[0]
+        console.log('[Scanner] escolhida:', best?.label)
 
-        const scanner = new Html5Qrcode('nfce-qr-reader')
-        scannerRef.current = scanner
+        // 4. Pega stream com deviceId exato
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            deviceId: { exact: best.deviceId },
+            width:  { ideal: 1280 },
+            height: { ideal: 720 },
+          }
+        })
+        streamRef.current = stream
 
-        await scanner.start(
-          { deviceId: { exact: mainCam.deviceId } },
-          { fps: 15, qrbox: { width: 250, height: 250 }, disableFlip: false },
-          (text: string) => {
-            if (calledRef.current || !text.startsWith('http')) return
-            calledRef.current = true
-            stopScanner().then(() => onResult(text))
-          },
-          () => {}
-        )
+        const video = videoRef.current!
+        video.srcObject = stream
+        video.setAttribute('playsinline', 'true')
+        await video.play()
+        setReady(true)
 
-        // Captura a track e expõe capabilities de zoom
+        // 5. Expõe controle de zoom
         setTimeout(() => {
-          const videoEl = document.querySelector('#nfce-qr-reader video') as HTMLVideoElement | null
-          const track = videoEl?.srcObject instanceof MediaStream
-            ? videoEl.srcObject.getVideoTracks()[0]
-            : null
-          if (!track) return
-          trackRef.current = track
-
+          const track = stream.getVideoTracks()[0]
+          setShowZoom(true)
           try {
-            const caps = (track.getCapabilities as any)() as any
+            const caps = (track.getCapabilities as any)?.() as any
             if (caps?.zoom) {
-              setZoomRange({ min: caps.zoom.min, max: Math.min(caps.zoom.max, 4) })
-              // Começa no zoom mínimo
-              ;(track.applyConstraints as any)({ advanced: [{ zoom: caps.zoom.min }] }).catch(() => {})
-              setZoomLevel(caps.zoom.min)
+              (track.applyConstraints as any)({ advanced: [{ zoom: caps.zoom.min }] }).catch(() => {})
             }
           } catch {}
-        }, 800)
+        }, 600)
+
+        // 6. Loop de detecção
+        const hasBarcodeDetector = 'BarcodeDetector' in window
+
+        if (hasBarcodeDetector) {
+          // Caminho nativo (Android Chrome) — usa a câmera do SO direto
+          const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] })
+          const scan = async () => {
+            if (!streamRef.current || calledRef.current) return
+            try {
+              const codes = await detector.detect(video)
+              if (codes.length > 0) {
+                const url: string = codes[0].rawValue
+                if (url.startsWith('http')) {
+                  calledRef.current = true
+                  stop()
+                  onResult(url)
+                  return
+                }
+              }
+            } catch {}
+            rafRef.current = requestAnimationFrame(scan)
+          }
+          rafRef.current = requestAnimationFrame(scan)
+
+        } else {
+          // Fallback: canvas + jsQR (sem depender do html5-qrcode)
+          const jsQR = (await import('jsqr')).default
+          const canvas = document.createElement('canvas')
+          const ctx = canvas.getContext('2d')!
+
+          const scan = () => {
+            if (!streamRef.current || calledRef.current) return
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+              canvas.width  = video.videoWidth
+              canvas.height = video.videoHeight
+              ctx.drawImage(video, 0, 0)
+              const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+              const code = jsQR(imageData.data, imageData.width, imageData.height)
+              if (code?.data?.startsWith('http')) {
+                calledRef.current = true
+                stop()
+                onResult(code.data)
+                return
+              }
+            }
+            setTimeout(() => { rafRef.current = requestAnimationFrame(scan) }, 300)
+          }
+          rafRef.current = requestAnimationFrame(scan)
+        }
 
       } catch (e) {
-        console.error('[QrScanner]', e)
+        console.error('[Scanner]', e)
         setCamError('Não foi possível acessar a câmera. Verifique as permissões.')
-        startedRef.current = false
       }
     })()
 
-    return () => { stopScanner() }
-  }, [active, onResult, stopScanner])
+    return () => { stop() }
+  }, [active, onResult, stop])
 
   if (camError) return (
     <div className="flex flex-col items-center justify-center h-52 gap-3 bg-zinc-800 rounded-xl border border-dashed border-zinc-700">
@@ -177,68 +219,68 @@ function QrScanner({ onResult, active }: { onResult: (url: string) => void; acti
 
   return (
     <div className="space-y-3">
-      <div className="relative rounded-xl overflow-hidden bg-black">
-        <div id="nfce-qr-reader" className="w-full" />
-        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" style={{
-            maskImage: 'radial-gradient(ellipse 230px 230px at center, transparent 48%, black 62%)',
-            WebkitMaskImage: 'radial-gradient(ellipse 230px 230px at center, transparent 48%, black 62%)',
-          }} />
-          <div className="relative w-[220px] h-[220px]">
-            {[
-              'top-0 left-0 border-t-[3px] border-l-[3px] rounded-tl-xl',
-              'top-0 right-0 border-t-[3px] border-r-[3px] rounded-tr-xl',
-              'bottom-0 left-0 border-b-[3px] border-l-[3px] rounded-bl-xl',
-              'bottom-0 right-0 border-b-[3px] border-r-[3px] rounded-br-xl',
-            ].map((c, i) => <div key={i} className={`absolute w-7 h-7 border-violet-400 ${c}`} />)}
-            <div className="absolute left-2 right-2 h-0.5 bg-gradient-to-r from-transparent via-violet-400 to-transparent animate-[nfcescan_2s_ease-in-out_infinite]" />
+      <div className="relative rounded-xl overflow-hidden bg-black" style={{ minHeight: 260 }}>
+        {/* Vídeo controlado diretamente — sem html5-qrcode gerenciando câmera */}
+        <video
+          ref={videoRef}
+          className="w-full object-cover"
+          muted
+          playsInline
+          style={{ display: 'block', maxHeight: 340 }}
+        />
+
+        {!ready && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black">
+            <Loader2 className="w-6 h-6 text-zinc-500 animate-spin" />
           </div>
-        </div>
+        )}
+
+        {ready && (
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40" style={{
+              maskImage: 'radial-gradient(ellipse 200px 200px at center, transparent 48%, black 62%)',
+              WebkitMaskImage: 'radial-gradient(ellipse 200px 200px at center, transparent 48%, black 62%)',
+            }} />
+            <div className="relative w-[200px] h-[200px]">
+              {[
+                'top-0 left-0 border-t-[3px] border-l-[3px] rounded-tl-xl',
+                'top-0 right-0 border-t-[3px] border-r-[3px] rounded-tr-xl',
+                'bottom-0 left-0 border-b-[3px] border-l-[3px] rounded-bl-xl',
+                'bottom-0 right-0 border-b-[3px] border-r-[3px] rounded-br-xl',
+              ].map((c, i) => <div key={i} className={`absolute w-7 h-7 border-violet-400 ${c}`} />)}
+              <div className="absolute left-2 right-2 h-0.5 bg-gradient-to-r from-transparent via-violet-400 to-transparent animate-[nfcescan_2s_ease-in-out_infinite]" />
+            </div>
+          </div>
+        )}
+
         <p className="absolute bottom-2 left-0 right-0 text-center text-zinc-400 text-[10px]">
           Aponte para o QR code da nota fiscal
         </p>
-        <style>{`@keyframes nfcescan{0%,100%{top:10px;opacity:.4}50%{top:205px;opacity:1}}`}</style>
+        <style>{`@keyframes nfcescan{0%,100%{top:10px;opacity:.4}50%{top:195px;opacity:1}}`}</style>
       </div>
 
-      {/* Controle de zoom */}
-      {zoomRange && (
+      {showZoom && (
         <div className="bg-zinc-800 rounded-xl border border-zinc-700/50 px-4 py-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-zinc-500 text-[10px] font-medium uppercase tracking-wider">Zoom</span>
             <span className="text-zinc-300 text-xs font-semibold">{zoomLevel.toFixed(1)}×</span>
           </div>
           <input
-            type="range"
-            min={zoomRange.min}
-            max={zoomRange.max}
-            step={0.1}
-            value={zoomLevel}
+            type="range" min={1} max={3} step={0.1} value={zoomLevel}
             onChange={e => applyZoom(parseFloat(e.target.value))}
             className="w-full accent-violet-500 h-1.5 rounded-full cursor-pointer"
           />
           <div className="flex gap-2">
-            {[1, 1.5, 2, 2.5].filter(z => z >= zoomRange.min && z <= zoomRange.max).map(z => (
-              <button
-                key={z}
-                onClick={() => applyZoom(z)}
+            {[1, 1.5, 2, 2.5].map(z => (
+              <button key={z} onClick={() => applyZoom(z)}
                 className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  Math.abs(zoomLevel - z) < 0.1
-                    ? 'bg-violet-600 text-white'
-                    : 'bg-zinc-700 text-zinc-400 hover:text-white'
-                }`}
-              >
+                  Math.abs(zoomLevel - z) < 0.1 ? 'bg-violet-600 text-white' : 'bg-zinc-700 text-zinc-400 hover:text-white'
+                }`}>
                 {z}×
               </button>
             ))}
           </div>
         </div>
-      )}
-
-      {/* Fallback se zoom não disponível */}
-      {!zoomRange && (
-        <p className="text-zinc-600 text-[10px] text-center">
-          Aproxime o celular até o QR code preencher a área
-        </p>
       )}
     </div>
   )
