@@ -67,14 +67,13 @@ const categoryBg: Record<string, string> = {
 // ── QR Scanner ────────────────────────────────────────────────────────────────
 
 function QrScanner({ onResult, active }: { onResult: (url: string) => void; active: boolean }) {
-  const videoRef    = useRef<HTMLVideoElement>(null)
-  const streamRef   = useRef<MediaStream | null>(null)
-  const rafRef      = useRef<number>(0)
-  const calledRef   = useRef(false)
-  const [camError,  setCamError]  = useState<string | null>(null)
-  const [ready,     setReady]     = useState(false)
-  const [zoomLevel, setZoomLevel] = useState(1)
-  const [showZoom,  setShowZoom]  = useState(false)
+  const videoRef   = useRef<HTMLVideoElement>(null)
+  const streamRef  = useRef<MediaStream | null>(null)
+  const rafRef     = useRef<number>(0)
+  const calledRef  = useRef(false)
+  const [camError, setCamError] = useState<string | null>(null)
+  const [ready,    setReady]    = useState(false)
+  const [facing,   setFacing]   = useState<'environment' | 'user'>('environment')
 
   const stop = useCallback(() => {
     cancelAnimationFrame(rafRef.current)
@@ -82,133 +81,79 @@ function QrScanner({ onResult, active }: { onResult: (url: string) => void; acti
     streamRef.current = null
     calledRef.current = false
     setReady(false)
-    setShowZoom(false)
-    setZoomLevel(1)
   }, [])
 
-  const applyZoom = useCallback((zoom: number) => {
-    setZoomLevel(zoom)
-    const track = streamRef.current?.getVideoTracks()[0]
-    if (track) {
-      try { (track.applyConstraints as any)({ advanced: [{ zoom }] }).catch(() => {}) } catch {}
+  const startCamera = useCallback(async (facingMode: 'environment' | 'user') => {
+    stop()
+    setCamError(null)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } }
+      })
+      streamRef.current = stream
+
+      const video = videoRef.current!
+      video.srcObject = stream
+      video.setAttribute('playsinline', 'true')
+      await video.play()
+      setReady(true)
+
+      const hasBarcodeDetector = 'BarcodeDetector' in window
+
+      if (hasBarcodeDetector) {
+        const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] })
+        const scan = async () => {
+          if (!streamRef.current || calledRef.current) return
+          try {
+            const codes = await detector.detect(video)
+            if (codes.length > 0 && codes[0].rawValue?.startsWith('http')) {
+              calledRef.current = true
+              stop()
+              onResult(codes[0].rawValue)
+              return
+            }
+          } catch {}
+          rafRef.current = requestAnimationFrame(scan)
+        }
+        rafRef.current = requestAnimationFrame(scan)
+      } else {
+        const jsQR = (await import('jsqr')).default
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')!
+        const scan = () => {
+          if (!streamRef.current || calledRef.current) return
+          if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width  = video.videoWidth
+            canvas.height = video.videoHeight
+            ctx.drawImage(video, 0, 0)
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+            const code = jsQR(imageData.data, imageData.width, imageData.height)
+            if (code?.data?.startsWith('http')) {
+              calledRef.current = true
+              stop()
+              onResult(code.data)
+              return
+            }
+          }
+          setTimeout(() => { rafRef.current = requestAnimationFrame(scan) }, 300)
+        }
+        rafRef.current = requestAnimationFrame(scan)
+      }
+    } catch (e) {
+      console.error('[Scanner]', e)
+      setCamError('Não foi possível acessar a câmera. Verifique as permissões.')
     }
-    if (videoRef.current) {
-      videoRef.current.style.transform = `scale(${zoom})`
-      videoRef.current.style.transformOrigin = 'center center'
-    }
-  }, [])
+  }, [stop, onResult])
 
   useEffect(() => {
     if (!active) { stop(); return }
-
-    ;(async () => {
-      try {
-        // 1. Permissão inicial
-        const tmp = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-        tmp.getTracks().forEach(t => t.stop())
-
-        // 2. Enumera câmeras com labels
-        const all = await navigator.mediaDevices.enumerateDevices()
-        const cams = all.filter(d => d.kind === 'videoinput')
-        console.log('[Scanner] câmeras:', cams.map(d => d.label))
-
-        // 3. Escolhe câmera principal traseira
-        const score = (l: string) => {
-          const s = l.toLowerCase()
-          if (s.includes('ultra') || s.includes('wide') || s.includes('macro') || s.includes('depth')) return -10
-          if (s.includes('tele')) return -5
-          if (s.includes('back') || s.includes('rear') || s.includes('traseira')) return 10
-          return 1
-        }
-        const best = [...cams].sort((a, b) => score(b.label) - score(a.label))[0]
-        console.log('[Scanner] escolhida:', best?.label)
-
-        // 4. Pega stream com deviceId exato
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            deviceId: { exact: best.deviceId },
-            width:  { ideal: 1280 },
-            height: { ideal: 720 },
-          }
-        })
-        streamRef.current = stream
-
-        const video = videoRef.current!
-        video.srcObject = stream
-        video.setAttribute('playsinline', 'true')
-        await video.play()
-        setReady(true)
-
-        // 5. Expõe controle de zoom
-        setTimeout(() => {
-          const track = stream.getVideoTracks()[0]
-          setShowZoom(true)
-          try {
-            const caps = (track.getCapabilities as any)?.() as any
-            if (caps?.zoom) {
-              (track.applyConstraints as any)({ advanced: [{ zoom: caps.zoom.min }] }).catch(() => {})
-            }
-          } catch {}
-        }, 600)
-
-        // 6. Loop de detecção
-        const hasBarcodeDetector = 'BarcodeDetector' in window
-
-        if (hasBarcodeDetector) {
-          // Caminho nativo (Android Chrome) — usa a câmera do SO direto
-          const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] })
-          const scan = async () => {
-            if (!streamRef.current || calledRef.current) return
-            try {
-              const codes = await detector.detect(video)
-              if (codes.length > 0) {
-                const url: string = codes[0].rawValue
-                if (url.startsWith('http')) {
-                  calledRef.current = true
-                  stop()
-                  onResult(url)
-                  return
-                }
-              }
-            } catch {}
-            rafRef.current = requestAnimationFrame(scan)
-          }
-          rafRef.current = requestAnimationFrame(scan)
-
-        } else {
-          // Fallback: canvas + jsQR (sem depender do html5-qrcode)
-          const jsQR = (await import('jsqr')).default
-          const canvas = document.createElement('canvas')
-          const ctx = canvas.getContext('2d')!
-
-          const scan = () => {
-            if (!streamRef.current || calledRef.current) return
-            if (video.readyState === video.HAVE_ENOUGH_DATA) {
-              canvas.width  = video.videoWidth
-              canvas.height = video.videoHeight
-              ctx.drawImage(video, 0, 0)
-              const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-              const code = jsQR(imageData.data, imageData.width, imageData.height)
-              if (code?.data?.startsWith('http')) {
-                calledRef.current = true
-                stop()
-                onResult(code.data)
-                return
-              }
-            }
-            setTimeout(() => { rafRef.current = requestAnimationFrame(scan) }, 300)
-          }
-          rafRef.current = requestAnimationFrame(scan)
-        }
-
-      } catch (e) {
-        console.error('[Scanner]', e)
-        setCamError('Não foi possível acessar a câmera. Verifique as permissões.')
-      }
-    })()
-
+    startCamera(facing)
     return () => { stop() }
-  }, [active, onResult, stop])
+  }, [active, facing, startCamera, stop])
+
+  const toggleCamera = () => {
+    setFacing(prev => prev === 'environment' ? 'user' : 'environment')
+  }
 
   if (camError) return (
     <div className="flex flex-col items-center justify-center h-52 gap-3 bg-zinc-800 rounded-xl border border-dashed border-zinc-700">
@@ -220,7 +165,6 @@ function QrScanner({ onResult, active }: { onResult: (url: string) => void; acti
   return (
     <div className="space-y-3">
       <div className="relative rounded-xl overflow-hidden bg-black" style={{ minHeight: 260 }}>
-        {/* Vídeo controlado diretamente — sem html5-qrcode gerenciando câmera */}
         <video
           ref={videoRef}
           className="w-full object-cover"
@@ -253,35 +197,37 @@ function QrScanner({ onResult, active }: { onResult: (url: string) => void; acti
           </div>
         )}
 
+        {/* Botão de troca de câmera */}
+        <button
+          onClick={toggleCamera}
+          className="absolute top-3 right-3 w-9 h-9 rounded-xl bg-black/50 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/70 transition-colors z-10"
+          title={facing === 'environment' ? 'Câmera frontal' : 'Câmera traseira'}
+        >
+          <RefreshCw className="w-4 h-4" />
+        </button>
+
         <p className="absolute bottom-2 left-0 right-0 text-center text-zinc-400 text-[10px]">
           Aponte para o QR code da nota fiscal
         </p>
         <style>{`@keyframes nfcescan{0%,100%{top:10px;opacity:.4}50%{top:195px;opacity:1}}`}</style>
       </div>
 
-      {showZoom && (
-        <div className="bg-zinc-800 rounded-xl border border-zinc-700/50 px-4 py-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-zinc-500 text-[10px] font-medium uppercase tracking-wider">Zoom</span>
-            <span className="text-zinc-300 text-xs font-semibold">{zoomLevel.toFixed(1)}×</span>
-          </div>
-          <input
-            type="range" min={1} max={3} step={0.1} value={zoomLevel}
-            onChange={e => applyZoom(parseFloat(e.target.value))}
-            className="w-full accent-violet-500 h-1.5 rounded-full cursor-pointer"
-          />
-          <div className="flex gap-2">
-            {[1, 1.5, 2, 2.5].map(z => (
-              <button key={z} onClick={() => applyZoom(z)}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  Math.abs(zoomLevel - z) < 0.1 ? 'bg-violet-600 text-white' : 'bg-zinc-700 text-zinc-400 hover:text-white'
-                }`}>
-                {z}×
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Indicador de câmera ativa */}
+      <div className="flex gap-2">
+        {(['environment', 'user'] as const).map(f => (
+          <button
+            key={f}
+            onClick={() => setFacing(f)}
+            className={`flex-1 py-2 rounded-xl text-xs font-medium transition-all border ${
+              facing === f
+                ? 'bg-violet-600/20 border-violet-500/50 text-violet-300'
+                : 'bg-zinc-800 border-zinc-700 text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            {f === 'environment' ? '📷 Traseira' : '🤳 Frontal'}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
