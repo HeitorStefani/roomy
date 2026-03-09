@@ -25,7 +25,7 @@ export async function getTarefasData() {
 
   const { data: tasks } = await supabase
     .from('tasks')
-    .select('id, title, room, assigned_to, status, priority, recurrence, due_date, overdue')
+    .select('id, title, room, assigned_to, status, priority, recurrence, due_date, overdue, rotation_members')
     .eq('house_id', houseId)
     .order('due_date', { ascending: true })
 
@@ -40,15 +40,16 @@ export async function getTarefasData() {
     profile,
     moradores: moradores ?? [],
     tasks: (tasks ?? []).map(t => ({
-      id:          t.id,
-      title:       t.title,
-      room:        t.room,
-      assignedTo:  t.assigned_to,
-      status:      t.status,
-      priority:    t.priority,
-      recurrence:  t.recurrence,
-      dueDate:     t.due_date,
-      overdue:     t.overdue,
+      id:              t.id,
+      title:           t.title,
+      room:            t.room,
+      assignedTo:      t.assigned_to,
+      status:          t.status,
+      priority:        t.priority,
+      recurrence:      t.recurrence,
+      dueDate:         t.due_date,
+      overdue:         t.overdue,
+      rotationMembers: t.rotation_members ?? [],
     })),
     history: (history ?? []).map(h => ({
       id:        h.id,

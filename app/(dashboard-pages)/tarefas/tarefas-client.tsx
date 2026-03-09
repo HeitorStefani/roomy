@@ -26,20 +26,30 @@ import {
   Plus, CheckCircle2, Clock, AlertCircle, RotateCcw,
   ChevronRight, History, User, Flame, ArrowRight,
   CalendarClock, Repeat2, ListFilter, GripVertical,
+  Pencil, CalendarDays, Lock, Loader2,
 } from 'lucide-react'
-import { moveTask, addTask } from './actions'
+import { moveTask, addTask, editTask } from './actions'
 import type { getTarefasData } from '@/queries/tarefas'
 
-type TarefasData = NonNullable<Awaited<ReturnType<typeof getTarefasData>>>
-type Status      = 'todo' | 'doing' | 'done'
-type Priority    = 'alta' | 'média' | 'baixa'
-type Recurrence  = 'única' | 'semanal' | 'mensal'
+type TarefasData   = NonNullable<Awaited<ReturnType<typeof getTarefasData>>>
+type Status        = 'todo' | 'doing' | 'done'
+type Priority      = 'alta' | 'média' | 'baixa'
+type Recurrence    = 'única' | 'diária' | '2x-semana' | 'semanal' | 'quinzenal' | 'mensal'
 
-type Task    = TarefasData['tasks'][number]
-type Morador = TarefasData['moradores'][number]
+type Task        = TarefasData['tasks'][number]
+type Morador     = TarefasData['moradores'][number]
 type HistoryItem = TarefasData['history'][number]
 
 const ROOMS = ['Cozinha', 'Banheiro', 'Sala', 'Quintal', 'Geral']
+
+const RECURRENCE_LABELS: Record<Recurrence, string> = {
+  'única':      'Uma vez',
+  'diária':     'Diária',
+  '2x-semana':  '2x por semana',
+  'semanal':    'Semanal',
+  'quinzenal':  'Quinzenal',
+  'mensal':     'Mensal',
+}
 
 const priorityStyle: Record<Priority, string> = {
   alta:  'bg-red-500/20 text-red-400 border-red-500/30',
@@ -53,22 +63,202 @@ const columns: { key: Status; label: string; icon: any; accent: string; bg: stri
   { key: 'done',  label: 'Feito',   icon: CheckCircle2, accent: 'text-emerald-400', bg: 'border-emerald-500/30', dropBg: 'bg-emerald-500/10' },
 ]
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function getDaysUntil(dueDateStr: string): number | null {
+  if (!dueDateStr) return null
+  const due   = new Date(dueDateStr)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  due.setHours(0, 0, 0, 0)
+  return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+function DueDateBadge({ dueDateStr, overdue }: { dueDateStr: string; overdue: boolean }) {
+  const days = getDaysUntil(dueDateStr)
+  if (days === null) return null
+
+  const formatted = new Date(dueDateStr).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+
+  if (overdue || days < 0) {
+    return (
+      <span className="flex items-center gap-1 text-[10px] text-red-400 font-medium">
+        <CalendarDays className="w-3 h-3" /> {formatted} · {Math.abs(days)}d atraso
+      </span>
+    )
+  }
+  if (days === 0) {
+    return (
+      <span className="flex items-center gap-1 text-[10px] text-amber-400 font-medium">
+        <CalendarDays className="w-3 h-3" /> Hoje
+      </span>
+    )
+  }
+  if (days === 1) {
+    return (
+      <span className="flex items-center gap-1 text-[10px] text-amber-300 font-medium">
+        <CalendarDays className="w-3 h-3" /> Amanhã
+      </span>
+    )
+  }
+  return (
+    <span className="flex items-center gap-1 text-[10px] text-zinc-500">
+      <CalendarDays className="w-3 h-3" /> {formatted} · {days}d
+    </span>
+  )
+}
+
+// ── Task Form (shared between Add and Edit) ───────────────────────────────────
+type TaskForm = {
+  title: string
+  room: string
+  assignedTo: string
+  priority: Priority
+  recurrence: Recurrence
+  dueDate: string
+  rotationMembers: string[]
+}
+
+function TaskFormFields({
+  form, setForm, moradores,
+}: {
+  form: TaskForm
+  setForm: (fn: (f: TaskForm) => TaskForm) => void
+  moradores: Morador[]
+}) {
+  return (
+    <div className="space-y-4 pt-2">
+      <div className="space-y-1">
+        <Label className="text-zinc-400 text-xs">Título</Label>
+        <Input
+          value={form.title}
+          onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+          placeholder="Ex: Limpar cozinha"
+          className="bg-zinc-700 border-zinc-600 text-white"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label className="text-zinc-400 text-xs">Cômodo</Label>
+          <Select value={form.room} onValueChange={v => setForm(f => ({ ...f, room: v }))}>
+            <SelectTrigger className="bg-zinc-700 border-zinc-600 text-white"><SelectValue /></SelectTrigger>
+            <SelectContent className="bg-zinc-700 border-zinc-600">
+              {ROOMS.map(r => <SelectItem key={r} value={r} className="text-zinc-200">{r}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-zinc-400 text-xs">Responsável</Label>
+          <Select value={form.assignedTo} onValueChange={v => setForm(f => ({ ...f, assignedTo: v }))}>
+            <SelectTrigger className="bg-zinc-700 border-zinc-600 text-white"><SelectValue /></SelectTrigger>
+            <SelectContent className="bg-zinc-700 border-zinc-600">
+              {moradores.map((m: Morador) => (
+                <SelectItem key={m.id} value={m.id} className="text-zinc-200">{m.name.split(' ')[0]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label className="text-zinc-400 text-xs">Prioridade</Label>
+          <Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v as Priority }))}>
+            <SelectTrigger className="bg-zinc-700 border-zinc-600 text-white"><SelectValue /></SelectTrigger>
+            <SelectContent className="bg-zinc-700 border-zinc-600">
+              {(['alta', 'média', 'baixa'] as Priority[]).map(p => (
+                <SelectItem key={p} value={p} className="text-zinc-200 capitalize">{p}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-zinc-400 text-xs">Recorrência</Label>
+          <Select value={form.recurrence} onValueChange={v => setForm(f => ({ ...f, recurrence: v as Recurrence }))}>
+            <SelectTrigger className="bg-zinc-700 border-zinc-600 text-white"><SelectValue /></SelectTrigger>
+            <SelectContent className="bg-zinc-700 border-zinc-600">
+              {(Object.entries(RECURRENCE_LABELS) as [Recurrence, string][]).map(([value, label]) => (
+                <SelectItem key={value} value={value} className="text-zinc-200">{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-zinc-400 text-xs">Prazo</Label>
+        <Input
+          type="date"
+          value={form.dueDate}
+          onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))}
+          className="bg-zinc-700 border-zinc-600 text-white"
+        />
+      </div>
+
+      {form.recurrence !== 'única' && (
+        <div className="space-y-2">
+          <Label className="text-zinc-400 text-xs">Participantes do rodízio</Label>
+          <div className="flex flex-wrap gap-2">
+            {moradores.map((m: Morador) => {
+              const selected = form.rotationMembers.includes(m.id)
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setForm(f => ({
+                    ...f,
+                    rotationMembers: selected
+                      ? f.rotationMembers.filter(id => id !== m.id)
+                      : [...f.rotationMembers, m.id],
+                  }))}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all border ${
+                    selected
+                      ? `${m.avatar_color} text-white border-transparent`
+                      : 'bg-zinc-700 text-zinc-400 border-zinc-600 hover:text-white'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${m.avatar_color}`} />
+                  {m.name.split(' ')[0]}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-zinc-600 text-[10px]">
+            {form.rotationMembers.length === 0
+              ? 'Nenhum selecionado — todos participarão'
+              : `${form.rotationMembers.length} participante(s) no rodízio`}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Task Card ─────────────────────────────────────────────────────────────────
 function TaskCardInner({
-  task, moradores, userId, onMove, isDragOverlay = false, dragListeners, dragAttributes,
+  task, moradores, userId, onMove, onEdit, isDragOverlay = false, dragListeners, dragAttributes,
 }: {
   task: Task
   moradores: Morador[]
   userId: string
   onMove: (id: string, status: Status) => void
+  onEdit: (task: Task) => void
   isDragOverlay?: boolean
   dragListeners?: any
   dragAttributes?: any
 }) {
-  const morador = moradores.find((m: Morador) => m.id === task.assignedTo)
-  const isMe    = task.assignedTo === userId
+  const [moving, setMoving] = useState(false)
+  const morador   = moradores.find((m: Morador) => m.id === task.assignedTo)
+  const isMe      = task.assignedTo === userId
   const next: Record<Status, Status | null> = { todo: 'doing', doing: 'done', done: null }
   const nextStatus = next[task.status as Status]
+
+  const handleMove = async () => {
+    if (!nextStatus || moving) return
+    setMoving(true)
+    await onMove(task.id, nextStatus)
+    setMoving(false)
+  }
 
   return (
     <div className={`bg-zinc-800 rounded-xl p-3 space-y-2.5 border transition-colors select-none ${
@@ -82,12 +272,23 @@ function TaskCardInner({
         <p className={`text-sm font-medium leading-snug flex-1 ${task.status === 'done' ? 'line-through text-zinc-500' : 'text-white'}`}>
           {task.title}
         </p>
-        <div
-          {...(dragListeners ?? {})}
-          {...(dragAttributes ?? {})}
-          className="p-0.5 rounded cursor-grab active:cursor-grabbing text-zinc-600 hover:text-zinc-400 transition-colors flex-shrink-0 mt-0.5"
-        >
-          <GripVertical className="w-3.5 h-3.5" />
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {!isDragOverlay && (
+            <button
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => { e.stopPropagation(); onEdit(task) }}
+              className="p-0.5 rounded text-zinc-600 hover:text-zinc-300 transition-colors"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+          )}
+          <div
+            {...(dragListeners ?? {})}
+            {...(dragAttributes ?? {})}
+            className="p-0.5 rounded cursor-grab active:cursor-grabbing text-zinc-600 hover:text-zinc-400 transition-colors mt-0.5"
+          >
+            <GripVertical className="w-3.5 h-3.5" />
+          </div>
         </div>
       </div>
 
@@ -95,7 +296,7 @@ function TaskCardInner({
         <span className="text-[10px] bg-zinc-700 text-zinc-400 px-2 py-0.5 rounded-full">{task.room}</span>
         {task.recurrence !== 'única' && (
           <span className="flex items-center gap-1 text-[10px] text-zinc-500">
-            <Repeat2 className="w-3 h-3" />{task.recurrence}
+            <Repeat2 className="w-3 h-3" />{RECURRENCE_LABELS[task.recurrence as Recurrence] ?? task.recurrence}
           </span>
         )}
         {task.overdue && (
@@ -104,6 +305,11 @@ function TaskCardInner({
           </span>
         )}
       </div>
+
+      {/* Data + dias restantes */}
+      {task.dueDate && task.status !== 'done' && (
+        <DueDateBadge dueDateStr={task.dueDate} overdue={task.overdue} />
+      )}
 
       <div className="flex items-center justify-between flex-wrap gap-1.5">
         <div className="flex items-center gap-1.5">
@@ -119,13 +325,24 @@ function TaskCardInner({
             {task.priority}
           </Badge>
           {nextStatus && !isDragOverlay && (
-            <button
-              onPointerDown={e => e.stopPropagation()}
-              onClick={e => { e.stopPropagation(); onMove(task.id, nextStatus) }}
-              className="flex items-center gap-0.5 text-[10px] text-zinc-500 hover:text-white bg-zinc-700 hover:bg-zinc-600 px-2 py-0.5 rounded-full transition-colors"
-            >
-              {nextStatus === 'doing' ? 'Iniciar' : 'Concluir'}<ChevronRight className="w-3 h-3" />
-            </button>
+            !isMe && nextStatus === 'doing' ? (
+              // Bloqueia iniciar tarefa de outro morador
+              <span className="flex items-center gap-0.5 text-[10px] text-zinc-600 bg-zinc-800 border border-zinc-700 px-2 py-0.5 rounded-full cursor-not-allowed">
+                <Lock className="w-2.5 h-2.5" /> Não é sua
+              </span>
+            ) : (
+              <button
+                onPointerDown={e => e.stopPropagation()}
+                onClick={e => { e.stopPropagation(); handleMove() }}
+                disabled={moving}
+                className="flex items-center gap-0.5 text-[10px] text-zinc-500 hover:text-white bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed px-2 py-0.5 rounded-full transition-colors active:scale-95"
+              >
+                {moving
+                  ? <><Loader2 className="w-3 h-3 animate-spin" /> Salvando</>
+                  : <>{nextStatus === 'doing' ? 'Iniciar' : 'Concluir'}<ChevronRight className="w-3 h-3" /></>
+                }
+              </button>
+            )
           )}
         </div>
       </div>
@@ -134,27 +351,29 @@ function TaskCardInner({
 }
 
 // ── Draggable wrapper ─────────────────────────────────────────────────────────
-function DraggableCard({ task, moradores, userId, onMove }: {
+function DraggableCard({ task, moradores, userId, onMove, onEdit }: {
   task: Task
   moradores: Morador[]
   userId: string
   onMove: (id: string, status: Status) => void
+  onEdit: (task: Task) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id })
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Translate.toString(transform), opacity: isDragging ? 0.3 : 1, transition: isDragging ? 'none' : 'opacity 0.15s' }}>
-      <TaskCardInner task={task} moradores={moradores} userId={userId} onMove={onMove} dragListeners={listeners} dragAttributes={attributes} />
+      <TaskCardInner task={task} moradores={moradores} userId={userId} onMove={onMove} onEdit={onEdit} dragListeners={listeners} dragAttributes={attributes} />
     </div>
   )
 }
 
 // ── Droppable Column ──────────────────────────────────────────────────────────
-function DroppableColumn({ col, tasks, moradores, userId, onMove, isOver }: {
+function DroppableColumn({ col, tasks, moradores, userId, onMove, onEdit, isOver }: {
   col: typeof columns[number]
   tasks: Task[]
   moradores: Morador[]
   userId: string
   onMove: (id: string, status: Status) => void
+  onEdit: (task: Task) => void
   isOver: boolean
 }) {
   const { setNodeRef } = useDroppable({ id: col.key })
@@ -176,7 +395,7 @@ function DroppableColumn({ col, tasks, moradores, userId, onMove, isOver }: {
           </div>
         ) : (
           tasks.map(task => (
-            <DraggableCard key={task.id} task={task} moradores={moradores} userId={userId} onMove={onMove} />
+            <DraggableCard key={task.id} task={task} moradores={moradores} userId={userId} onMove={onMove} onEdit={onEdit} />
           ))
         )}
       </div>
@@ -227,9 +446,11 @@ function HistorySidebarContent({ history, tasks, moradores, userId }: {
         </CardHeader>
         <CardContent className="space-y-2">
           {tasks.filter((t: Task) => t.recurrence !== 'única' && t.status !== 'done').slice(0, 4).map((t: Task) => {
-            const sortedMoradores = [...moradores].sort((a, b) => a.name.localeCompare(b.name))
-            const currIdx = sortedMoradores.findIndex((m: Morador) => m.id === t.assignedTo)
-            const nextM   = sortedMoradores[(currIdx + 1) % sortedMoradores.length]
+            const rotMembers = t.rotationMembers?.length
+              ? moradores.filter((m: Morador) => t.rotationMembers!.includes(m.id)).sort((a, b) => a.name.localeCompare(b.name))
+              : [...moradores].sort((a, b) => a.name.localeCompare(b.name))
+            const currIdx = rotMembers.findIndex((m: Morador) => m.id === t.assignedTo)
+            const nextM   = rotMembers[(currIdx + 1) % rotMembers.length]
             return (
               <div key={t.id} className="flex items-center gap-2 bg-zinc-900 p-2 rounded-lg">
                 <span className="text-zinc-400 text-xs flex-1 truncate">{t.title}</span>
@@ -277,6 +498,12 @@ function HistorySidebarContent({ history, tasks, moradores, userId }: {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
+const defaultForm = (moradores: Morador[]): TaskForm => ({
+  title: '', room: 'Cozinha', assignedTo: moradores[0]?.id ?? '',
+  priority: 'média', recurrence: 'semanal', dueDate: '',
+  rotationMembers: moradores.map(m => m.id),
+})
+
 export default function TarefasClient({ data }: { data: TarefasData }) {
   const router              = useRouter()
   const [, startTransition] = useTransition()
@@ -293,13 +520,11 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
   const [filterRecurrence, setFilterRecurrence] = useState('todas')
   const [showHistory,      setShowHistory]      = useState(false)
   const [openAdd,          setOpenAdd]          = useState(false)
+  const [editingTask,      setEditingTask]      = useState<Task | null>(null)
   const [activeTask,       setActiveTask]       = useState<Task | null>(null)
   const [overColumn,       setOverColumn]       = useState<Status | null>(null)
 
-  const [form, setForm] = useState({
-    title: '', room: 'Cozinha', assignedTo: moradores[0]?.id ?? '',
-    priority: 'média' as Priority, recurrence: 'semanal' as Recurrence, dueDate: '',
-  })
+  const [form, setForm] = useState<TaskForm>(() => defaultForm(moradores))
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
@@ -330,9 +555,12 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
   }
 
   const handleMoveTask = (id: string, newStatus: Status) => {
-    startTransition(async () => {
-      await moveTask(id, newStatus, userId)
-      router.refresh()
+    return new Promise<void>(resolve => {
+      startTransition(async () => {
+        await moveTask(id, newStatus, userId)
+        router.refresh()
+        resolve()
+      })
     })
   }
 
@@ -340,16 +568,49 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
     if (!form.title) return
     startTransition(async () => {
       await addTask({
-        houseId:    profile.house_id!,
-        title:      form.title,
-        room:       form.room,
-        assignedTo: form.assignedTo,
-        priority:   form.priority,
-        recurrence: form.recurrence,
-        dueDate:    form.dueDate,
+        houseId:         profile.house_id!,
+        title:           form.title,
+        room:            form.room,
+        assignedTo:      form.assignedTo,
+        priority:        form.priority,
+        recurrence:      form.recurrence,
+        dueDate:         form.dueDate,
+        rotationMembers: form.recurrence !== 'única' ? form.rotationMembers : [],
       })
-      setForm({ title: '', room: 'Cozinha', assignedTo: moradores[0]?.id ?? '', priority: 'média', recurrence: 'semanal', dueDate: '' })
+      setForm(defaultForm(moradores))
       setOpenAdd(false)
+      router.refresh()
+    })
+  }
+
+  const handleOpenEdit = (task: Task) => {
+    setForm({
+      title:           task.title,
+      room:            task.room,
+      assignedTo:      task.assignedTo,
+      priority:        task.priority as Priority,
+      recurrence:      task.recurrence as Recurrence,
+      dueDate:         task.dueDate ?? '',
+      rotationMembers: task.rotationMembers ?? moradores.map(m => m.id),
+    })
+    setEditingTask(task)
+  }
+
+  const handleEditTask = () => {
+    if (!editingTask || !form.title) return
+    startTransition(async () => {
+      await editTask({
+        taskId:          editingTask.id,
+        title:           form.title,
+        room:            form.room,
+        assignedTo:      form.assignedTo,
+        priority:        form.priority,
+        recurrence:      form.recurrence,
+        dueDate:         form.dueDate,
+        rotationMembers: form.recurrence !== 'única' ? form.rotationMembers : [],
+      })
+      setEditingTask(null)
+      setForm(defaultForm(moradores))
       router.refresh()
     })
   }
@@ -367,7 +628,7 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
     <div className="min-h-screen bg-gray-800 p-1 sm:p-2">
       <div className="bg-zinc-900 min-h-screen rounded-2xl sm:rounded-3xl p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
 
-        {/* ── Header ────────────────────────────────────────────────── */}
+        {/* ── Header ──────────────────────────────────────────────── */}
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center">
             <SidebarTrigger />
@@ -392,75 +653,29 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
                   <span className="xs:hidden">Nova</span>
                 </Button>
               </DialogTrigger>
-              <DialogContent className="bg-zinc-800 border-zinc-700 text-white w-[calc(100vw-2rem)] max-w-md mx-auto rounded-2xl">
+              <DialogContent className="bg-zinc-800 border-zinc-700 text-white w-[calc(100vw-2rem)] max-w-md mx-auto rounded-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader><DialogTitle>Criar Tarefa</DialogTitle></DialogHeader>
-                <div className="space-y-4 pt-2">
-                  <div className="space-y-1">
-                    <Label className="text-zinc-400 text-xs">Título</Label>
-                    <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-                      placeholder="Ex: Limpar cozinha" className="bg-zinc-700 border-zinc-600 text-white" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-zinc-400 text-xs">Cômodo</Label>
-                      <Select value={form.room} onValueChange={v => setForm(f => ({ ...f, room: v }))}>
-                        <SelectTrigger className="bg-zinc-700 border-zinc-600 text-white"><SelectValue /></SelectTrigger>
-                        <SelectContent className="bg-zinc-700 border-zinc-600">
-                          {ROOMS.map(r => <SelectItem key={r} value={r} className="text-zinc-200">{r}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-zinc-400 text-xs">Responsável</Label>
-                      <Select value={form.assignedTo} onValueChange={v => setForm(f => ({ ...f, assignedTo: v }))}>
-                        <SelectTrigger className="bg-zinc-700 border-zinc-600 text-white"><SelectValue /></SelectTrigger>
-                        <SelectContent className="bg-zinc-700 border-zinc-600">
-                          {moradores.map((m: Morador) => (
-                            <SelectItem key={m.id} value={m.id} className="text-zinc-200">{m.name.split(' ')[0]}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-zinc-400 text-xs">Prioridade</Label>
-                      <Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v as Priority }))}>
-                        <SelectTrigger className="bg-zinc-700 border-zinc-600 text-white"><SelectValue /></SelectTrigger>
-                        <SelectContent className="bg-zinc-700 border-zinc-600">
-                          {(['alta','média','baixa'] as Priority[]).map(p => (
-                            <SelectItem key={p} value={p} className="text-zinc-200 capitalize">{p}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-zinc-400 text-xs">Recorrência</Label>
-                      <Select value={form.recurrence} onValueChange={v => setForm(f => ({ ...f, recurrence: v as Recurrence }))}>
-                        <SelectTrigger className="bg-zinc-700 border-zinc-600 text-white"><SelectValue /></SelectTrigger>
-                        <SelectContent className="bg-zinc-700 border-zinc-600">
-                          {(['única','semanal','mensal'] as Recurrence[]).map(r => (
-                            <SelectItem key={r} value={r} className="text-zinc-200 capitalize">{r}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-zinc-400 text-xs">Prazo</Label>
-                    <Input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))}
-                      className="bg-zinc-700 border-zinc-600 text-white" />
-                  </div>
-                  <Button onClick={handleAddTask} className="w-full bg-yellow-500 hover:bg-yellow-400 text-zinc-900 font-semibold">
-                    Criar tarefa
-                  </Button>
-                </div>
+                <TaskFormFields form={form} setForm={setForm} moradores={moradores} />
+                <Button onClick={handleAddTask} className="w-full bg-yellow-500 hover:bg-yellow-400 text-zinc-900 font-semibold mt-2">
+                  Criar tarefa
+                </Button>
               </DialogContent>
             </Dialog>
           </div>
         </div>
 
-        {/* ── Summary cards ─────────────────────────────────────────── */}
+        {/* ── Edit Dialog ──────────────────────────────────────────── */}
+        <Dialog open={!!editingTask} onOpenChange={open => { if (!open) { setEditingTask(null); setForm(defaultForm(moradores)) } }}>
+          <DialogContent className="bg-zinc-800 border-zinc-700 text-white w-[calc(100vw-2rem)] max-w-md mx-auto rounded-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader><DialogTitle>Editar Tarefa</DialogTitle></DialogHeader>
+            <TaskFormFields form={form} setForm={setForm} moradores={moradores} />
+            <Button onClick={handleEditTask} className="w-full bg-yellow-500 hover:bg-yellow-400 text-zinc-900 font-semibold mt-2">
+              Salvar alterações
+            </Button>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Summary cards ───────────────────────────────────────── */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
           {[
             { label: 'Total',      value: totalCount,   icon: ListFilter,   accent: 'text-zinc-300',    border: 'border-zinc-700'       },
@@ -480,7 +695,7 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
           ))}
         </div>
 
-        {/* ── Filters ───────────────────────────────────────────────── */}
+        {/* ── Filters ─────────────────────────────────────────────── */}
         <div className="space-y-2 sm:space-y-0 sm:flex sm:items-center sm:gap-3 sm:flex-wrap">
           <span className="text-zinc-500 text-sm flex items-center gap-1.5">
             <ListFilter className="w-4 h-4" /> Filtrar:
@@ -504,19 +719,19 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
           </div>
           <Separator orientation="vertical" className="hidden sm:block data-[orientation=vertical]:h-5 bg-zinc-700" />
           <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-            {['todas','única','semanal','mensal'].map(r => (
+            {['todas', 'única', 'diária', '2x-semana', 'semanal', 'quinzenal', 'mensal'].map(r => (
               <button key={r} onClick={() => setFilterRecurrence(r)}
                 className={`px-3 py-1 rounded-full text-xs font-medium transition-all capitalize flex-shrink-0 ${
                   filterRecurrence === r ? 'bg-zinc-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-700'
                 }`}
               >
-                {r === 'todas' ? 'Todas' : r}
+                {r === 'todas' ? 'Todas' : RECURRENCE_LABELS[r as Recurrence] ?? r}
               </button>
             ))}
           </div>
         </div>
 
-        {/* ── Kanban + History ──────────────────────────────────────── */}
+        {/* ── Kanban + History ────────────────────────────────────── */}
         <Sheet open={showHistory} onOpenChange={setShowHistory}>
           <SheetContent side="right" className="bg-zinc-900 border-zinc-800 text-white w-[300px] sm:w-[320px] overflow-y-auto p-4 block lg:hidden">
             <SheetHeader className="mb-4">
@@ -545,13 +760,14 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
                   moradores={moradores}
                   userId={userId}
                   onMove={handleMoveTask}
+                  onEdit={handleOpenEdit}
                   isOver={overColumn === col.key}
                 />
               ))}
             </div>
             <DragOverlay dropAnimation={{ duration: 180, easing: 'ease' }}>
               {activeTask ? (
-                <TaskCardInner task={activeTask} moradores={moradores} userId={userId} onMove={() => {}} isDragOverlay />
+                <TaskCardInner task={activeTask} moradores={moradores} userId={userId} onMove={() => Promise.resolve()} onEdit={() => {}} isDragOverlay />
               ) : null}
             </DragOverlay>
           </DndContext>
