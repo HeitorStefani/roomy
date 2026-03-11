@@ -26,7 +26,7 @@ import {
   Plus, CheckCircle2, Clock, AlertCircle, RotateCcw,
   ChevronRight, History, User, Flame, ArrowRight,
   CalendarClock, Repeat2, ListFilter, GripVertical,
-  Pencil, CalendarDays, Lock, Loader2, CalendarRange,
+  Pencil, CalendarDays, Lock, Loader2,
 } from 'lucide-react'
 import { moveTask, addTask, editTask } from './actions'
 import type { getTarefasData } from '@/queries/tarefas'
@@ -51,6 +51,16 @@ const RECURRENCE_LABELS: Record<Recurrence, string> = {
   'mensal':    'Mensal',
 }
 
+const WEEK_DAYS = [
+  { label: 'Dom', value: 0 },
+  { label: 'Seg', value: 1 },
+  { label: 'Ter', value: 2 },
+  { label: 'Qua', value: 3 },
+  { label: 'Qui', value: 4 },
+  { label: 'Sex', value: 5 },
+  { label: 'Sáb', value: 6 },
+]
+
 const priorityStyle: Record<Priority, string> = {
   alta:  'bg-red-500/20 text-red-400 border-red-500/30',
   média: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
@@ -66,24 +76,28 @@ const columns: { key: Status; label: string; icon: any; accent: string; bg: stri
 const DONE_LINGER_MS = 3500
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+function parseDateLocal(str: string): Date {
+  const [y, m, d] = str.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
 function getDaysUntil(dueDateStr: string): number | null {
   if (!dueDateStr) return null
-  const due = new Date(dueDateStr), today = new Date()
-  today.setHours(0,0,0,0); due.setHours(0,0,0,0)
+  const due = parseDateLocal(dueDateStr)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  due.setHours(0, 0, 0, 0)
   return Math.round((due.getTime() - today.getTime()) / 86400000)
 }
 
-function isTaskVisible(task: Task): boolean {
-  if (!task.startDate) return true
-  const today = new Date(), start = new Date(task.startDate)
-  today.setHours(0,0,0,0); start.setHours(0,0,0,0)
-  return start <= today
+function isTaskVisible(_task: Task): boolean {
+  return true
 }
 
 function DueDateBadge({ dueDateStr, overdue }: { dueDateStr: string; overdue: boolean }) {
   const days = getDaysUntil(dueDateStr)
   if (days === null) return null
-  const fmt = new Date(dueDateStr).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+  const fmt = parseDateLocal(dueDateStr).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
   if (overdue || days < 0)
     return <span className="flex items-center gap-1 text-[10px] text-red-400 font-medium"><CalendarDays className="w-3 h-3" />{fmt} · {Math.abs(days)}d atraso</span>
   if (days === 0)
@@ -97,9 +111,12 @@ function DueDateBadge({ dueDateStr, overdue }: { dueDateStr: string; overdue: bo
 type TaskForm = {
   title: string; room: string; assignedTo: string
   priority: Priority; recurrence: Recurrence
-  startDate: string; dueDate: string
+  dueDate: string
   rotationMembers: string[]
+  weekDays: number[]
 }
+
+const SHOW_WEEK_DAYS_FOR: Recurrence[] = ['diária', '2x-semana', 'semanal']
 
 function TaskFormFields({ form, setForm, moradores }: {
   form: TaskForm
@@ -151,7 +168,7 @@ function TaskFormFields({ form, setForm, moradores }: {
         </div>
         <div className="space-y-1">
           <Label className="text-zinc-400 text-xs">Recorrência</Label>
-          <Select value={form.recurrence} onValueChange={v => setForm(f => ({ ...f, recurrence: v as Recurrence }))}>
+          <Select value={form.recurrence} onValueChange={v => setForm(f => ({ ...f, recurrence: v as Recurrence, weekDays: [] }))}>
             <SelectTrigger className="bg-zinc-700 border-zinc-600 text-white"><SelectValue /></SelectTrigger>
             <SelectContent className="bg-zinc-700 border-zinc-600">
               {(Object.entries(RECURRENCE_LABELS) as [Recurrence, string][]).map(([value, label]) => (
@@ -162,26 +179,46 @@ function TaskFormFields({ form, setForm, moradores }: {
         </div>
       </div>
 
-      {/* Datas lado a lado */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
+      {SHOW_WEEK_DAYS_FOR.includes(form.recurrence) && (
+        <div className="space-y-2">
           <Label className="text-zinc-400 text-xs flex items-center gap-1">
-            <CalendarRange className="w-3 h-3" /> Data de início
+            <CalendarDays className="w-3 h-3" /> Dias da semana
           </Label>
-          <Input type="date" value={form.startDate}
-            onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
-            className="bg-zinc-700 border-zinc-600 text-white" />
-          <p className="text-zinc-600 text-[10px]">Quando aparece no kanban</p>
+          <div className="flex gap-1">
+            {WEEK_DAYS.map(({ label, value }) => {
+              const selected = form.weekDays.includes(value)
+              return (
+                <button key={value} type="button"
+                  onClick={() => setForm(f => ({
+                    ...f,
+                    weekDays: selected ? f.weekDays.filter(d => d !== value) : [...f.weekDays, value],
+                  }))}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                    selected ? 'bg-yellow-500 text-zinc-900 border-yellow-400' : 'bg-zinc-700 text-zinc-400 border-zinc-600 hover:text-white'
+                  }`}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-zinc-600 text-[10px]">
+            {form.weekDays.length === 0 ? 'Nenhum selecionado — usará intervalo padrão' : `${form.weekDays.length} dia(s) selecionado(s)`}
+          </p>
         </div>
-        <div className="space-y-1">
-          <Label className="text-zinc-400 text-xs flex items-center gap-1">
-            <CalendarDays className="w-3 h-3" /> Prazo final
-          </Label>
-          <Input type="date" value={form.dueDate}
-            onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))}
-            className="bg-zinc-700 border-zinc-600 text-white" />
-          <p className="text-zinc-600 text-[10px]">Data limite para concluir</p>
-        </div>
+      )}
+
+      <div className="space-y-1">
+        <Label className="text-zinc-400 text-xs flex items-center gap-1">
+          <CalendarDays className="w-3 h-3" /> Data para realizar
+        </Label>
+        <input
+          type="date"
+          value={form.dueDate}
+          onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))}
+          className="w-full rounded-md border border-zinc-600 bg-zinc-700 px-3 py-2 text-sm text-white [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-yellow-500"
+        />
+        <p className="text-zinc-600 text-[10px]">A tarefa aparece no kanban neste dia e deve ser concluída nele</p>
       </div>
 
       {form.recurrence !== 'única' && (
@@ -194,9 +231,7 @@ function TaskFormFields({ form, setForm, moradores }: {
                 <button key={m.id} type="button"
                   onClick={() => setForm(f => ({
                     ...f,
-                    rotationMembers: selected
-                      ? f.rotationMembers.filter(id => id !== m.id)
-                      : [...f.rotationMembers, m.id],
+                    rotationMembers: selected ? f.rotationMembers.filter(id => id !== m.id) : [...f.rotationMembers, m.id],
                   }))}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all border ${
                     selected ? `${m.avatar_color} text-white border-transparent` : 'bg-zinc-700 text-zinc-400 border-zinc-600 hover:text-white'
@@ -463,9 +498,9 @@ function HistorySidebarContent({ history, tasks, moradores }: {
 const defaultForm = (moradores: Morador[]): TaskForm => ({
   title: '', room: 'Cozinha', assignedTo: moradores[0]?.id ?? '',
   priority: 'média', recurrence: 'semanal',
-  startDate: new Date().toISOString().split('T')[0],
-  dueDate: '',
+  dueDate: new Date().toISOString().split('T')[0],
   rotationMembers: moradores.map(m => m.id),
+  weekDays: [],
 })
 
 export default function TarefasClient({ data }: { data: TarefasData }) {
@@ -486,22 +521,26 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
   const [overColumn,       setOverColumn]       = useState<Status | null>(null)
   const [fadingIds,        setFadingIds]        = useState<Set<string>>(new Set())
   const [hiddenIds,        setHiddenIds]        = useState<Set<string>>(new Set())
+  // ── Optimistic statuses: sobrescreve o status da task enquanto o servidor processa
+  const [optimisticStatuses, setOptimisticStatuses] = useState<Record<string, Status>>({})
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
   const [form, setForm] = useState<TaskForm>(() => defaultForm(moradores))
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
-  // Ao carregar, esconde tarefas já concluídas (não precisam aparecer)
   useEffect(() => {
     setHiddenIds(new Set(tasks.filter(t => t.status === 'done').map(t => t.id)))
   }, []) // eslint-disable-line
 
+  // Limpa o status optimistic quando o servidor confirma (tasks prop atualiza)
+  useEffect(() => {
+    setOptimisticStatuses({})
+  }, [tasks])
+
   const scheduleFade = (taskId: string) => {
-    // Após DONE_LINGER_MS, inicia animação de saída
     const t1 = setTimeout(() => {
       setFadingIds(prev => new Set(prev).add(taskId))
-      // Após animação, remove do DOM
       const t2 = setTimeout(() => {
         setHiddenIds(prev => new Set(prev).add(taskId))
         setFadingIds(prev => { const s = new Set(prev); s.delete(taskId); return s })
@@ -509,6 +548,16 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
       timers.current.set(taskId + '_hide', t2)
     }, DONE_LINGER_MS)
     timers.current.set(taskId, t1)
+  }
+
+  // Aplica o status optimistic e dispara o server action em background
+  const applyMove = (taskId: string, newStatus: Status) => {
+    setOptimisticStatuses(prev => ({ ...prev, [taskId]: newStatus }))
+    if (newStatus === 'done') scheduleFade(taskId)
+    startTransition(async () => {
+      await moveTask(taskId, newStatus, userId)
+      router.refresh()
+    })
   }
 
   const handleDragStart = (e: DragStartEvent) => {
@@ -528,28 +577,32 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
     const taskId = active.id as string, newStatus = over.id as Status
     if (!['todo','doing','done'].includes(newStatus)) return
     const task = tasks.find(t => t.id === taskId)
-    if (!task || task.status === newStatus) return
-    if (newStatus === 'done') scheduleFade(taskId)
-    startTransition(async () => { await moveTask(taskId, newStatus, userId); router.refresh() })
+    if (!task) return
+    const currentStatus = optimisticStatuses[taskId] ?? task.status
+    if (currentStatus === newStatus) return
+    applyMove(taskId, newStatus)
   }
 
   const handleMoveTask = (id: string, newStatus: Status) => {
-    if (newStatus === 'done') scheduleFade(id)
-    return new Promise<void>(resolve => {
-      startTransition(async () => { await moveTask(id, newStatus, userId); router.refresh(); resolve() })
-    })
+    applyMove(id, newStatus)
+    return Promise.resolve()
   }
 
   const handleAddTask = () => {
-    if (!form.title) return
+    if (!form.title.trim()) return
     startTransition(async () => {
-      await addTask({
-        houseId: profile.house_id!, title: form.title, room: form.room,
-        assignedTo: form.assignedTo, priority: form.priority, recurrence: form.recurrence,
-        startDate: form.startDate, dueDate: form.dueDate,
-        rotationMembers: form.recurrence !== 'única' ? form.rotationMembers : [],
-      })
-      setForm(defaultForm(moradores)); setOpenAdd(false); router.refresh()
+      try {
+        await addTask({
+          houseId: profile.house_id!, title: form.title, room: form.room,
+          assignedTo: form.assignedTo, priority: form.priority, recurrence: form.recurrence,
+          startDate: form.dueDate, dueDate: form.dueDate,
+          rotationMembers: form.recurrence !== 'única' ? form.rotationMembers : [],
+          weekDays: form.weekDays,
+        })
+        setForm(defaultForm(moradores)); setOpenAdd(false); router.refresh()
+      } catch (e) {
+        console.error('Erro ao criar tarefa:', e)
+      }
     })
   }
 
@@ -557,34 +610,44 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
     setForm({
       title: task.title, room: task.room, assignedTo: task.assignedTo,
       priority: task.priority as Priority, recurrence: task.recurrence as Recurrence,
-      startDate: task.startDate ?? new Date().toISOString().split('T')[0],
-      dueDate: task.dueDate ?? '',
+      dueDate: task.dueDate ?? task.startDate ?? new Date().toISOString().split('T')[0],
       rotationMembers: task.rotationMembers ?? moradores.map(m => m.id),
+      weekDays: (task as any).weekDays ?? [],
     })
     setEditingTask(task)
   }
 
   const handleEditTask = () => {
-    if (!editingTask || !form.title) return
+    if (!editingTask || !form.title.trim()) return
     startTransition(async () => {
-      await editTask({
-        taskId: editingTask.id, title: form.title, room: form.room,
-        assignedTo: form.assignedTo, priority: form.priority, recurrence: form.recurrence,
-        startDate: form.startDate, dueDate: form.dueDate,
-        rotationMembers: form.recurrence !== 'única' ? form.rotationMembers : [],
-      })
-      setEditingTask(null); setForm(defaultForm(moradores)); router.refresh()
+      try {
+        await editTask({
+          taskId: editingTask.id, title: form.title, room: form.room,
+          assignedTo: form.assignedTo, priority: form.priority, recurrence: form.recurrence,
+          startDate: form.dueDate, dueDate: form.dueDate,
+          rotationMembers: form.recurrence !== 'única' ? form.rotationMembers : [],
+          weekDays: form.weekDays,
+        })
+        setEditingTask(null); setForm(defaultForm(moradores)); router.refresh()
+      } catch (e) {
+        console.error('Erro ao editar tarefa:', e)
+      }
     })
   }
 
-  const visibleTasks = tasks.filter(t => !hiddenIds.has(t.id) && isTaskVisible(t))
+  // Mescla tasks com statuses optimistas
+  const tasksWithOptimistic = tasks.map(t =>
+    optimisticStatuses[t.id] ? { ...t, status: optimisticStatuses[t.id] } : t
+  )
+
+  const visibleTasks = tasksWithOptimistic.filter(t => !hiddenIds.has(t.id) && isTaskVisible(t))
   const filtered = visibleTasks.filter(t =>
     (filterMorador === 'todos' || t.assignedTo === filterMorador) &&
     (filterRecurrence === 'todas' || t.recurrence === filterRecurrence)
   )
 
   const overdueCount = visibleTasks.filter(t => t.overdue).length
-  const doneCount    = tasks.filter(t => t.status === 'done').length
+  const doneCount    = tasksWithOptimistic.filter(t => t.status === 'done').length
   const totalCount   = visibleTasks.length
 
   return (
