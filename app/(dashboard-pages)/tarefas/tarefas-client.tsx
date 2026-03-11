@@ -494,6 +494,132 @@ function HistorySidebarContent({ history, tasks, moradores }: {
   )
 }
 
+// ── Completion Celebration Overlay ───────────────────────────────────────────
+const CELEBRATION_MESSAGES = [
+  { title: 'Arrasou! 💪', sub: 'A casa tá orgulhosa de você.' },
+  { title: 'Isso aí! ✅', sub: 'Mais uma pra conta, campeão.' },
+  { title: 'Missão cumprida! 🏆', sub: 'Bora pro próximo?' },
+  { title: 'Mandou bem! 🎉', sub: 'Casa limpa, mente tranquila.' },
+  { title: 'Feito e fichado! ⚡', sub: 'Você é o motor dessa casa.' },
+]
+
+function CompletionOverlay({ taskTitle, onDone }: { taskTitle: string; onDone: () => void }) {
+  const [visible, setVisible] = useState(false)
+  // Pick message once on mount, stable across renders
+  const msg = useRef(CELEBRATION_MESSAGES[Math.floor(Math.random() * CELEBRATION_MESSAGES.length)]).current
+
+  useEffect(() => {
+    // Trigger enter animation on next frame
+    const raf = requestAnimationFrame(() => setVisible(true))
+    // Auto-dismiss after 2.2s
+    const dismiss = setTimeout(() => {
+      setVisible(false)
+      setTimeout(onDone, 400)
+    }, 2200)
+    return () => { cancelAnimationFrame(raf); clearTimeout(dismiss) }
+  }, []) // eslint-disable-line
+
+  return (
+    <>
+      {/* Keyframes injected once */}
+      <style>{`
+        @keyframes celebParticle {
+          0%   { opacity: 1; transform: translate(-50%, -50%) rotate(var(--angle)) translateY(0px) scale(1); }
+          100% { opacity: 0; transform: translate(-50%, -50%) rotate(var(--angle)) translateY(var(--dist)) scale(0.4); }
+        }
+        @keyframes celebPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(52,211,153,0.4); }
+          50%       { box-shadow: 0 0 0 10px rgba(52,211,153,0); }
+        }
+        @keyframes celebSpin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+      `}</style>
+
+      <div className="fixed inset-0 z-[100] flex items-center justify-center pointer-events-none" aria-hidden>
+
+        {/* Soft backdrop tint */}
+        <div
+          className="absolute inset-0 bg-emerald-950/30 backdrop-blur-[1px]"
+          style={{
+            opacity: visible ? 1 : 0,
+            transition: 'opacity 0.3s ease',
+          }}
+        />
+
+        {/* Burst particles */}
+        {visible && Array.from({ length: 22 }).map((_, i) => {
+          const angle = (i / 22) * 360
+          const dist  = -(100 + (i % 3) * 35)
+          const size  = 5 + (i % 4) * 2
+          const delay = (i % 5) * 0.04
+          const color = ['#34d399','#6ee7b7','#a7f3d0','#059669','#d1fae5'][i % 5]
+          return (
+            <div
+              key={i}
+              className="absolute rounded-full"
+              style={{
+                top: '50%', left: '50%',
+                width: size, height: size,
+                background: color,
+                '--angle': `${angle}deg`,
+                '--dist': `${dist}px`,
+                animation: `celebParticle 0.65s cubic-bezier(.2,.8,.4,1) ${delay}s both`,
+              } as React.CSSProperties}
+            />
+          )
+        })}
+
+        {/* Main card */}
+        <div
+          className="relative flex flex-col items-center gap-4 rounded-2xl px-8 py-7 max-w-[280px] text-center"
+          style={{
+            background: 'linear-gradient(145deg, #18181b 0%, #111827 100%)',
+            border: '1px solid rgba(52,211,153,0.4)',
+            boxShadow: '0 0 0 1px rgba(52,211,153,0.08), 0 25px 60px rgba(0,0,0,0.7), 0 0 40px rgba(52,211,153,0.12)',
+            transform: visible ? 'scale(1) translateY(0)' : 'scale(0.8) translateY(16px)',
+            opacity: visible ? 1 : 0,
+            transition: 'transform 0.4s cubic-bezier(.34,1.56,.64,1), opacity 0.35s ease',
+          }}
+        >
+          {/* Rotating ring behind icon */}
+          <div className="relative flex items-center justify-center">
+            <div
+              className="absolute w-16 h-16 rounded-full border-2 border-dashed border-emerald-500/30"
+              style={{ animation: 'celebSpin 8s linear infinite' }}
+            />
+            <div
+              className="w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center"
+              style={{ animation: 'celebPulse 1.6s ease infinite' }}
+            >
+              <CheckCircle2 className="w-7 h-7 text-emerald-400" strokeWidth={2.5} />
+            </div>
+          </div>
+
+          {/* Message */}
+          <div className="space-y-1">
+            <p className="text-white font-bold text-xl leading-tight tracking-tight">{msg.title}</p>
+            <p className="text-zinc-400 text-sm">{msg.sub}</p>
+          </div>
+
+          {/* Task title pill */}
+          <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-3 py-1.5 max-w-full">
+            <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+            <span className="text-emerald-400 text-xs font-medium truncate">{taskTitle}</span>
+          </div>
+
+          {/* Subtle bottom glow */}
+          <div
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-px"
+            style={{ background: 'linear-gradient(90deg, transparent, rgba(52,211,153,0.5), transparent)' }}
+          />
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 const defaultForm = (moradores: Morador[]): TaskForm => ({
   title: '', room: 'Cozinha', assignedTo: moradores[0]?.id ?? '',
@@ -521,8 +647,10 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
   const [overColumn,       setOverColumn]       = useState<Status | null>(null)
   const [fadingIds,        setFadingIds]        = useState<Set<string>>(new Set())
   const [hiddenIds,        setHiddenIds]        = useState<Set<string>>(new Set())
-  // ── Optimistic statuses: sobrescreve o status da task enquanto o servidor processa
   const [optimisticStatuses, setOptimisticStatuses] = useState<Record<string, Status>>({})
+  // ── Celebration state: title of the just-completed task
+  const [celebrationTask,  setCelebrationTask]  = useState<string | null>(null)
+  const [isSaving,         setIsSaving]         = useState(false)
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
   const [form, setForm] = useState<TaskForm>(() => defaultForm(moradores))
@@ -533,7 +661,6 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
     setHiddenIds(new Set(tasks.filter(t => t.status === 'done').map(t => t.id)))
   }, []) // eslint-disable-line
 
-  // Limpa o status optimistic quando o servidor confirma (tasks prop atualiza)
   useEffect(() => {
     setOptimisticStatuses({})
   }, [tasks])
@@ -550,10 +677,16 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
     timers.current.set(taskId, t1)
   }
 
-  // Aplica o status optimistic e dispara o server action em background
   const applyMove = (taskId: string, newStatus: Status) => {
     setOptimisticStatuses(prev => ({ ...prev, [taskId]: newStatus }))
-    if (newStatus === 'done') scheduleFade(taskId)
+
+    // Show celebration when moving to 'done'
+    if (newStatus === 'done') {
+      const task = tasks.find(t => t.id === taskId)
+      if (task) setCelebrationTask(task.title)
+      scheduleFade(taskId)
+    }
+
     startTransition(async () => {
       await moveTask(taskId, newStatus, userId)
       router.refresh()
@@ -588,22 +721,25 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
     return Promise.resolve()
   }
 
-  const handleAddTask = () => {
-    if (!form.title.trim()) return
-    startTransition(async () => {
-      try {
-        await addTask({
-          houseId: profile.house_id!, title: form.title, room: form.room,
-          assignedTo: form.assignedTo, priority: form.priority, recurrence: form.recurrence,
-          startDate: form.dueDate, dueDate: form.dueDate,
-          rotationMembers: form.recurrence !== 'única' ? form.rotationMembers : [],
-          weekDays: form.weekDays,
-        })
-        setForm(defaultForm(moradores)); setOpenAdd(false); router.refresh()
-      } catch (e) {
-        console.error('Erro ao criar tarefa:', e)
-      }
-    })
+  const handleAddTask = async () => {
+    if (!form.title.trim() || isSaving) return
+    setIsSaving(true)
+    try {
+      await addTask({
+        houseId: profile.house_id!, title: form.title, room: form.room,
+        assignedTo: form.assignedTo, priority: form.priority, recurrence: form.recurrence,
+        startDate: form.dueDate, dueDate: form.dueDate,
+        rotationMembers: form.recurrence !== 'única' ? form.rotationMembers : [],
+        weekDays: form.weekDays,
+      })
+      setForm(defaultForm(moradores))
+      setOpenAdd(false)
+      router.refresh()
+    } catch (e) {
+      console.error('Erro ao criar tarefa:', e)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleOpenEdit = (task: Task) => {
@@ -617,25 +753,27 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
     setEditingTask(task)
   }
 
-  const handleEditTask = () => {
-    if (!editingTask || !form.title.trim()) return
-    startTransition(async () => {
-      try {
-        await editTask({
-          taskId: editingTask.id, title: form.title, room: form.room,
-          assignedTo: form.assignedTo, priority: form.priority, recurrence: form.recurrence,
-          startDate: form.dueDate, dueDate: form.dueDate,
-          rotationMembers: form.recurrence !== 'única' ? form.rotationMembers : [],
-          weekDays: form.weekDays,
-        })
-        setEditingTask(null); setForm(defaultForm(moradores)); router.refresh()
-      } catch (e) {
-        console.error('Erro ao editar tarefa:', e)
-      }
-    })
+  const handleEditTask = async () => {
+    if (!editingTask || !form.title.trim() || isSaving) return
+    setIsSaving(true)
+    try {
+      await editTask({
+        taskId: editingTask.id, title: form.title, room: form.room,
+        assignedTo: form.assignedTo, priority: form.priority, recurrence: form.recurrence,
+        startDate: form.dueDate, dueDate: form.dueDate,
+        rotationMembers: form.recurrence !== 'única' ? form.rotationMembers : [],
+        weekDays: form.weekDays,
+      })
+      setEditingTask(null)
+      setForm(defaultForm(moradores))
+      router.refresh()
+    } catch (e) {
+      console.error('Erro ao editar tarefa:', e)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
-  // Mescla tasks com statuses optimistas
   const tasksWithOptimistic = tasks.map(t =>
     optimisticStatuses[t.id] ? { ...t, status: optimisticStatuses[t.id] } : t
   )
@@ -653,6 +791,14 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
   return (
     <div className="min-h-screen bg-gray-800 p-1 sm:p-2">
       <div className="bg-zinc-900 min-h-screen rounded-2xl sm:rounded-3xl p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
+
+        {/* Completion Celebration */}
+        {celebrationTask && (
+          <CompletionOverlay
+            taskTitle={celebrationTask}
+            onDone={() => setCelebrationTask(null)}
+          />
+        )}
 
         {/* Header */}
         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -677,7 +823,9 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
               <DialogContent className="bg-zinc-800 border-zinc-700 text-white w-[calc(100vw-2rem)] max-w-md mx-auto rounded-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader><DialogTitle>Criar Tarefa</DialogTitle></DialogHeader>
                 <TaskFormFields form={form} setForm={setForm} moradores={moradores} />
-                <Button onClick={handleAddTask} className="w-full bg-yellow-500 hover:bg-yellow-400 text-zinc-900 font-semibold mt-2">Criar tarefa</Button>
+                <Button onClick={handleAddTask} disabled={isSaving} className="w-full bg-yellow-500 hover:bg-yellow-400 text-zinc-900 font-semibold mt-2 disabled:opacity-70 disabled:cursor-not-allowed">
+                  {isSaving ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando…</> : 'Criar tarefa'}
+                </Button>
               </DialogContent>
             </Dialog>
           </div>
@@ -688,7 +836,9 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
           <DialogContent className="bg-zinc-800 border-zinc-700 text-white w-[calc(100vw-2rem)] max-w-md mx-auto rounded-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle>Editar Tarefa</DialogTitle></DialogHeader>
             <TaskFormFields form={form} setForm={setForm} moradores={moradores} />
-            <Button onClick={handleEditTask} className="w-full bg-yellow-500 hover:bg-yellow-400 text-zinc-900 font-semibold mt-2">Salvar alterações</Button>
+            <Button onClick={handleEditTask} disabled={isSaving} className="w-full bg-yellow-500 hover:bg-yellow-400 text-zinc-900 font-semibold mt-2 disabled:opacity-70 disabled:cursor-not-allowed">
+              {isSaving ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando…</> : 'Salvar alterações'}
+            </Button>
           </DialogContent>
         </Dialog>
 
