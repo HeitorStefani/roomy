@@ -25,7 +25,7 @@ export async function getTarefasData() {
 
   const { data: tasks } = await supabase
     .from('tasks')
-    .select('id, title, room, assigned_to, status, priority, recurrence, due_date, overdue, rotation_members')
+    .select('id, title, room, assigned_to, status, priority, recurrence, start_date, due_date, overdue, rotation_members')
     .eq('house_id', houseId)
     .order('due_date', { ascending: true })
 
@@ -36,7 +36,7 @@ export async function getTarefasData() {
     .limit(20)
 
   return JSON.parse(JSON.stringify({
-    userId:   user.id,
+    userId:    user.id,
     profile,
     moradores: moradores ?? [],
     tasks: (tasks ?? []).map(t => ({
@@ -47,6 +47,7 @@ export async function getTarefasData() {
       status:          t.status,
       priority:        t.priority,
       recurrence:      t.recurrence,
+      startDate:       t.start_date,
       dueDate:         t.due_date,
       overdue:         t.overdue,
       rotationMembers: t.rotation_members ?? [],

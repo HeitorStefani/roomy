@@ -8,13 +8,19 @@ type Recurrence = 'única' | 'diária' | '2x-semana' | 'semanal' | 'quinzenal' |
 function getNextDueDate(current: string, recurrence: Recurrence): string {
   const d = new Date(current)
   switch (recurrence) {
-    case 'diária':     d.setDate(d.getDate() + 1);    break
-    case '2x-semana':  d.setDate(d.getDate() + 3);    break  // ~2x por semana
-    case 'semanal':    d.setDate(d.getDate() + 7);    break
-    case 'quinzenal':  d.setDate(d.getDate() + 14);   break
-    case 'mensal':     d.setMonth(d.getMonth() + 1);  break
-    default:           break
+    case 'diária':    d.setDate(d.getDate() + 1);   break
+    case '2x-semana': d.setDate(d.getDate() + 3);   break
+    case 'semanal':   d.setDate(d.getDate() + 7);   break
+    case 'quinzenal': d.setDate(d.getDate() + 14);  break
+    case 'mensal':    d.setMonth(d.getMonth() + 1); break
   }
+  return d.toISOString().split('T')[0]
+}
+
+function getNextStartDate(current: string, recurrence: Recurrence): string {
+  // startDate da próxima ocorrência = dueDate atual + 1 dia
+  const d = new Date(current)
+  d.setDate(d.getDate() + 1)
   return d.toISOString().split('T')[0]
 }
 
@@ -23,7 +29,7 @@ export async function moveTask(taskId: string, newStatus: 'todo' | 'doing' | 'do
 
   const { data: task } = await supabase
     .from('tasks')
-    .select('id, title, room, assigned_to, priority, recurrence, due_date, house_id, rotation_members')
+    .select('id, title, room, assigned_to, priority, recurrence, start_date, due_date, house_id, rotation_members')
     .eq('id', taskId)
     .single()
 
@@ -39,21 +45,17 @@ export async function moveTask(taskId: string, newStatus: 'todo' | 'doing' | 'do
     })
 
     if (task.recurrence !== 'única') {
-      // Usa rotation_members se definido, senão todos da casa
       let memberIds: string[] = task.rotation_members ?? []
-
       if (!memberIds.length) {
         const { data: moradores } = await supabase
-          .from('users')
-          .select('id')
-          .eq('house_id', task.house_id)
-          .order('name', { ascending: true })
+          .from('users').select('id').eq('house_id', task.house_id).order('name', { ascending: true })
         memberIds = (moradores ?? []).map((m: { id: string }) => m.id)
       }
 
-      const currIdx = memberIds.indexOf(task.assigned_to)
-      const nextId  = memberIds[(currIdx + 1) % memberIds.length]
-      const nextDue = getNextDueDate(task.due_date, task.recurrence as Recurrence)
+      const currIdx  = memberIds.indexOf(task.assigned_to)
+      const nextId   = memberIds[(currIdx + 1) % memberIds.length]
+      const nextDue  = getNextDueDate(task.due_date, task.recurrence as Recurrence)
+      const nextStart = getNextStartDate(task.due_date, task.recurrence as Recurrence)
 
       await supabase.from('tasks').insert({
         house_id:         task.house_id,
@@ -63,6 +65,7 @@ export async function moveTask(taskId: string, newStatus: 'todo' | 'doing' | 'do
         status:           'todo',
         priority:         task.priority,
         recurrence:       task.recurrence,
+        start_date:       nextStart,
         due_date:         nextDue,
         overdue:          false,
         rotation_members: task.rotation_members,
@@ -74,14 +77,9 @@ export async function moveTask(taskId: string, newStatus: 'todo' | 'doing' | 'do
 }
 
 export async function addTask(data: {
-  houseId: string
-  title: string
-  room: string
-  assignedTo: string
-  priority: 'alta' | 'média' | 'baixa'
-  recurrence: Recurrence
-  dueDate: string
-  rotationMembers: string[]
+  houseId: string; title: string; room: string; assignedTo: string
+  priority: 'alta' | 'média' | 'baixa'; recurrence: Recurrence
+  startDate: string; dueDate: string; rotationMembers: string[]
 }) {
   const supabase = await createClient()
 
@@ -93,7 +91,8 @@ export async function addTask(data: {
     status:           'todo',
     priority:         data.priority,
     recurrence:       data.recurrence,
-    due_date:         data.dueDate || new Date().toISOString().split('T')[0],
+    start_date:       data.startDate || new Date().toISOString().split('T')[0],
+    due_date:         data.dueDate   || new Date().toISOString().split('T')[0],
     overdue:          false,
     rotation_members: data.rotationMembers.length ? data.rotationMembers : null,
   })
@@ -102,14 +101,9 @@ export async function addTask(data: {
 }
 
 export async function editTask(data: {
-  taskId: string
-  title: string
-  room: string
-  assignedTo: string
-  priority: 'alta' | 'média' | 'baixa'
-  recurrence: Recurrence
-  dueDate: string
-  rotationMembers: string[]
+  taskId: string; title: string; room: string; assignedTo: string
+  priority: 'alta' | 'média' | 'baixa'; recurrence: Recurrence
+  startDate: string; dueDate: string; rotationMembers: string[]
 }) {
   const supabase = await createClient()
 
@@ -119,7 +113,8 @@ export async function editTask(data: {
     assigned_to:      data.assignedTo,
     priority:         data.priority,
     recurrence:       data.recurrence,
-    due_date:         data.dueDate || new Date().toISOString().split('T')[0],
+    start_date:       data.startDate || new Date().toISOString().split('T')[0],
+    due_date:         data.dueDate   || new Date().toISOString().split('T')[0],
     rotation_members: data.rotationMembers.length ? data.rotationMembers : null,
   }).eq('id', data.taskId)
 

@@ -94,7 +94,6 @@ export async function deleteBudgetCategory(categoryId: string) {
 
 export async function deleteBill(billId: string) {
   const supabase = await createClient()
-  // Deleta participantes primeiro (FK constraint)
   await supabase.from('bill_participants').delete().eq('bill_id', billId)
   await supabase.from('house_bills').delete().eq('id', billId)
   revalidatePath('/contas')
@@ -104,4 +103,35 @@ export async function deleteTransaction(txId: string) {
   const supabase = await createClient()
   await supabase.from('personal_transactions').delete().eq('id', txId)
   revalidatePath('/contas')
+}
+
+// Upload de comprovante PIX — marca como pago automaticamente
+export async function uploadComprovante(formData: FormData) {
+  const supabase      = await createClient()
+  const file          = formData.get('file') as File
+  const participantId = formData.get('participantId') as string
+
+  if (!file || !participantId) return { error: 'Dados inválidos.' }
+  if (file.size > 10 * 1024 * 1024) return { error: 'Arquivo muito grande. Máximo 10MB.' }
+
+  const ext      = file.name.split('.').pop() ?? 'jpg'
+  const filePath = `comprovantes/${participantId}-${Date.now()}.${ext}`
+  const buffer   = Buffer.from(await file.arrayBuffer())
+
+  const { error: uploadError } = await supabase.storage
+    .from('comprovantes')
+    .upload(filePath, buffer, { contentType: file.type, upsert: true })
+
+  if (uploadError) return { error: 'Erro no upload: ' + uploadError.message }
+
+  const { data: { publicUrl } } = supabase.storage.from('comprovantes').getPublicUrl(filePath)
+
+  // Salva URL do comprovante e marca como pago
+  await supabase
+    .from('bill_participants')
+    .update({ paid: true, comprovante_url: publicUrl })
+    .eq('id', participantId)
+
+  revalidatePath('/contas')
+  return { ok: true }
 }

@@ -20,9 +20,10 @@ export async function getContasData(month: number, year: number) {
   const firstDay = new Date(year, month, 1).toISOString().split('T')[0]
   const lastDay  = new Date(year, month + 1, 0).toISOString().split('T')[0]
 
+  // Busca moradores com pix_key
   const { data: moradores } = await supabase
     .from('users')
-    .select('id, name, avatar_color')
+    .select('id, name, avatar_color, pix_key')
     .eq('house_id', houseId)
 
   const { data: billsRaw } = await supabase
@@ -30,7 +31,7 @@ export async function getContasData(month: number, year: number) {
     .select(`
       id, title, total, due_date, paid_by, notified,
       bill_participants (
-        id, user_id, amount, paid,
+        id, user_id, amount, paid, comprovante_url,
         users ( id, name, avatar_color )
       )
     `)
@@ -78,8 +79,6 @@ export async function getContasData(month: number, year: number) {
 
   const budgets = (budgetsRaw ?? []).map(b => ({
     ...b,
-    // icon_name armazena o valor da categoria (ex: 'food'), que é o que
-    // personal_transactions.category também usa — não usar b.name (label em pt-BR)
     spent: transactions
       .filter(t => t.type === 'expense' && t.category === b.icon_name)
       .reduce((s, t) => s + t.amount, 0),
@@ -97,12 +96,13 @@ export async function getContasData(month: number, year: number) {
       paidBy:   b.paid_by,
       notified: b.notified,
       participants: (b.bill_participants as any[]).map(p => ({
-        id:     p.id,
-        userId: p.user_id,
-        name:   p.users.name,
-        color:  p.users.avatar_color,
-        amount: p.amount,
-        paid:   p.paid,
+        id:             p.id,
+        userId:         p.user_id,
+        name:           p.users.name,
+        color:          p.users.avatar_color,
+        amount:         p.amount,
+        paid:           p.paid,
+        comprovanteUrl: p.comprovante_url ?? null,
       })),
     })),
     houseSummary:    { totalCasa, totalDebt, totalReceivable, pendingNotifs },
