@@ -45,13 +45,14 @@ function extractTotals($: cheerio.CheerioAPI) {
 
   section.find('[id*="linhaTotal"], .linhaShade').each((_, linha) => {
     const label = cleanTxt($(linha).find('label').text()) ?? ''
-    const valor = cleanTxt($(linha).find('.totalNumb').text()) ?? ''
+    // .totalNumb pode ter classes extras como txtMax — usar [class*="totalNumb"]
+    const valor = cleanTxt($(linha).find('[class*="totalNumb"]').text()) ?? ''
 
     if (/qtd\.?\s*total\s*de\s*itens/i.test(label)) {
       const m = valor.match(/\d+/)
       if (m) total_itens = parseInt(m[0])
-    } else if (/valor\s*total\s*bruto|subtotal/i.test(label)) {
-      // Subtotal ANTES do desconto
+    } else if (/valor\s*total\s*bruto|valor\s*total\s*r?\$?|subtotal/i.test(label)) {
+      // Subtotal ANTES do desconto (ex: "Valor total R$:", "Subtotal", "Valor Total Bruto")
       subtotal = toFloatBr(valor)
     } else if (/desconto/i.test(label)) {
       // Desconto pode vir como "-R$ 5,00" ou "R$ 5,00"
