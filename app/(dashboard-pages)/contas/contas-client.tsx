@@ -1,6 +1,5 @@
 'use client'
-
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Separator } from '@/components/ui/separator'
@@ -20,53 +19,31 @@ import {
   Utensils, Car, ShoppingBag, Heart, Gamepad2,
   DollarSign, Target, Wallet, AlertCircle, Check,
   ChevronDown, ChevronUp, Trash2, MoreHorizontal,
+  QrCode, Copy, Upload, Loader2, ImageIcon, ExternalLink,
   type LucideIcon,
 } from 'lucide-react'
 import {
   addHouseBill, markParticipantAsPaid, markBillNotified,
   addPersonalTransaction, addBudgetCategory, deleteBudgetCategory,
-  deleteBill, deleteTransaction,
+  deleteBill, deleteTransaction, uploadComprovante,
 } from './actions'
 import { NfceScanner } from '@/components/nfce-scanner'
 import type { getContasData } from '@/queries/contas'
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+type ContasData  = NonNullable<Awaited<ReturnType<typeof getContasData>>>
+type TabType     = 'casa' | 'pessoal'
+type Morador     = ContasData['moradores'][number]
+type Bill        = ContasData['bills'][number]
+type Participant = Bill['participants'][number]
+type Transaction = ContasData['transactions'][number]
+type Budget      = ContasData['budgets'][number]
 
-type ContasData    = NonNullable<Awaited<ReturnType<typeof getContasData>>>
-type TabType       = 'casa' | 'pessoal'
-type Morador       = ContasData['moradores'][number]
-type Bill          = ContasData['bills'][number]
-type Participant   = Bill['participants'][number]
-type Transaction   = ContasData['transactions'][number]
-type Budget        = ContasData['budgets'][number]
+interface BillForm  { title: string; total: string; dueDate: string; involved: string[] }
+interface TxForm    { description: string; category: string; amount: string; type: 'expense' | 'income' }
+interface MetaForm  { name: string; limitAmount: string }
 
-interface BillForm {
-  title: string
-  total: string
-  dueDate: string
-  involved: string[]
-}
-
-interface TxForm {
-  description: string
-  category: string
-  amount: string
-  type: 'expense' | 'income'
-}
-
-interface MetaForm {
-  name: string
-  limitAmount: string
-}
-
-// ── Constants ──────────────────────────────────────────────────────────────────
-
-const MONTHS = [
-  'Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez',
-] as const
-
-const fmt = (v: number): string =>
-  v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'] as const
+const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 const CATEGORY_OPTIONS = [
   { value: 'food',      label: 'Alimentação', icon: 'food',      color: 'text-orange-400' },
@@ -82,31 +59,20 @@ const categoryIcon: Record<string, LucideIcon> = {
   food: Utensils, transport: Car, health: Heart,
   shopping: ShoppingBag, leisure: Gamepad2, income: DollarSign, other: MoreHorizontal,
 }
-
 const categoryColor: Record<string, string> = {
   food: 'text-orange-400', transport: 'text-blue-400', health: 'text-rose-400',
   shopping: 'text-purple-400', leisure: 'text-teal-400', income: 'text-emerald-400', other: 'text-zinc-400',
 }
-
 const categoryBg: Record<string, string> = {
   food: 'bg-orange-500/10', transport: 'bg-blue-500/10', health: 'bg-rose-500/10',
   shopping: 'bg-purple-500/10', leisure: 'bg-teal-500/10', income: 'bg-emerald-500/10', other: 'bg-zinc-700',
 }
-
 const categoryLabel: Record<string, string> = {
   food: 'Alimentação', transport: 'Transporte', health: 'Saúde',
   shopping: 'Compras', leisure: 'Lazer', income: 'Renda', other: 'Outros',
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
-
-interface AvatarPillProps {
-  name: string
-  color: string
-  size?: 'sm' | 'md'
-}
-
-function AvatarPill({ name, color, size = 'md' }: AvatarPillProps) {
+function AvatarPill({ name, color, size = 'md' }: { name: string; color: string; size?: 'sm' | 'md' }) {
   const sz = size === 'sm' ? 'w-6 h-6 text-[10px]' : 'w-8 h-8 text-xs'
   return (
     <div className={`${sz} ${color} rounded-full flex items-center justify-center font-bold text-white ring-2 ring-zinc-900`}>
@@ -115,15 +81,9 @@ function AvatarPill({ name, color, size = 'md' }: AvatarPillProps) {
   )
 }
 
-interface SummaryCardProps {
-  label: string
-  value: number
-  accent: string
-  border: string
-  icon: LucideIcon
-}
-
-function SummaryCard({ label, value, accent, border, icon: Icon }: SummaryCardProps) {
+function SummaryCard({ label, value, accent, border, icon: Icon }: {
+  label: string; value: number; accent: string; border: string; icon: LucideIcon
+}) {
   return (
     <div className={`bg-zinc-800 border ${border} rounded-2xl p-3 sm:p-4`}>
       <div className="flex items-center justify-between mb-1">
@@ -135,35 +95,176 @@ function SummaryCard({ label, value, accent, border, icon: Icon }: SummaryCardPr
   )
 }
 
-// ── Main component ─────────────────────────────────────────────────────────────
+// ── Modal PIX ─────────────────────────────────────────────────────────────────
+function PixModal({
+  participant, pixKey, creditorName, onSuccess,
+}: {
+  participant: Participant
+  pixKey: string
+  creditorName: string
+  onSuccess: () => void
+}) {
+  const [open,       setOpen]       = useState(false)
+  const [copied,     setCopied]     = useState(false)
+  const [uploading,  setUploading]  = useState(false)
+  const [preview,    setPreview]    = useState<string | null>(null)
+  const [error,      setError]      = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
-interface ContasClientProps {
-  data: ContasData
-  initialMonth: number
-  initialYear: number
+  const handleCopy = () => {
+    navigator.clipboard.writeText(pixKey)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) { setError('Arquivo muito grande. Máximo 10MB.'); return }
+    setError(null)
+    const reader = new FileReader()
+    reader.onload = () => setPreview(reader.result as string)
+    reader.readAsDataURL(file)
+  }
+
+  const handleUpload = async () => {
+    const file = fileRef.current?.files?.[0]
+    if (!file) return
+    setUploading(true); setError(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('participantId', participant.id)
+      const result = await uploadComprovante(formData)
+      if (result?.ok) {
+        setOpen(false)
+        onSuccess()
+      } else {
+        setError(result?.error ?? 'Erro ao enviar comprovante.')
+      }
+    } catch { setError('Erro inesperado.') }
+    finally { setUploading(false) }
+  }
+
+  // Botão diferente se já enviou comprovante
+  if (participant.comprovanteUrl) {
+    return (
+      <a href={participant.comprovanteUrl} target="_blank" rel="noopener noreferrer"
+        className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors">
+        <ImageIcon className="w-3 h-3" /> Ver comprovante <ExternalLink className="w-2.5 h-2.5" />
+      </a>
+    )
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button className="flex items-center gap-1.5 text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-full px-3 py-1 transition-all font-medium">
+          <QrCode className="w-3 h-3" /> Pagar PIX
+        </button>
+      </DialogTrigger>
+      <DialogContent className="bg-zinc-800 border-zinc-700 text-white w-[calc(100vw-2rem)] max-w-sm mx-auto rounded-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <QrCode className="w-4 h-4 text-emerald-400" /> Pagar via PIX
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 pt-1">
+          {/* Valor */}
+          <div className="bg-zinc-900 rounded-xl p-4 text-center">
+            <p className="text-zinc-400 text-xs mb-1">Valor a pagar para {creditorName.split(' ')[0]}</p>
+            <p className="text-white text-3xl font-bold">{fmt(participant.amount)}</p>
+          </div>
+
+          {/* Chave PIX */}
+          <div className="space-y-2">
+            <p className="text-zinc-400 text-xs">Chave PIX de {creditorName.split(' ')[0]}</p>
+            <button
+              onClick={handleCopy}
+              className="w-full flex items-center gap-3 bg-zinc-700 hover:bg-zinc-600 border border-zinc-600 rounded-xl px-4 py-3 transition-all group"
+            >
+              <QrCode className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="text-white text-sm flex-1 text-left font-mono truncate">{pixKey}</span>
+              <span className={`text-xs shrink-0 transition-colors ${copied ? 'text-emerald-400' : 'text-zinc-500 group-hover:text-zinc-300'}`}>
+                {copied ? <><Check className="w-3.5 h-3.5 inline mr-1" />Copiado!</> : <><Copy className="w-3.5 h-3.5 inline mr-1" />Copiar</>}
+              </span>
+            </button>
+            <p className="text-zinc-600 text-[11px] text-center">
+              Copie a chave, pague no seu banco e volte aqui para enviar o comprovante.
+            </p>
+          </div>
+
+          {/* Upload comprovante */}
+          <div className="space-y-2">
+            <p className="text-zinc-400 text-xs">Comprovante do PIX</p>
+            <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFileChange} />
+
+            {preview ? (
+              <div className="relative rounded-xl overflow-hidden border border-zinc-600">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={preview} alt="Preview" className="w-full max-h-48 object-contain bg-zinc-900" />
+                <button
+                  onClick={() => { setPreview(null); if (fileRef.current) fileRef.current.value = '' }}
+                  className="absolute top-2 right-2 w-6 h-6 bg-zinc-900/80 rounded-full flex items-center justify-center text-zinc-400 hover:text-white"
+                >
+                  ×
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="w-full border-2 border-dashed border-zinc-600 hover:border-emerald-500/50 rounded-xl py-6 flex flex-col items-center gap-2 transition-all group"
+              >
+                <Upload className="w-6 h-6 text-zinc-600 group-hover:text-emerald-400 transition-colors" />
+                <span className="text-zinc-500 text-xs group-hover:text-zinc-300 transition-colors">
+                  Toque para escolher o comprovante
+                </span>
+                <span className="text-zinc-600 text-[10px]">JPG, PNG ou PDF</span>
+              </button>
+            )}
+
+            {error && <p className="text-red-400 text-xs">{error}</p>}
+          </div>
+
+          <Button
+            onClick={handleUpload}
+            disabled={!preview || uploading}
+            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold disabled:opacity-40 h-12 text-base"
+          >
+            {uploading
+              ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Enviando…</>
+              : <><CheckCircle2 className="w-4 h-4 mr-2" />Enviei o PIX — marcar como pago</>
+            }
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
-export default function ContasClient({ data, initialMonth, initialYear }: ContasClientProps) {
+// ── Main ──────────────────────────────────────────────────────────────────────
+export default function ContasClient({ data, initialMonth, initialYear }: {
+  data: ContasData; initialMonth: number; initialYear: number
+}) {
   const router              = useRouter()
   const [, startTransition] = useTransition()
 
   const [tab, setTab] = useState<TabType>('casa')
-
   const monthIndex = initialMonth
   const year       = initialYear
 
-  const navigateMonth = (dir: -1 | 1): void => {
-    let m = initialMonth + dir
-    let y = initialYear
+  const navigateMonth = (dir: -1 | 1) => {
+    let m = initialMonth + dir, y = initialYear
     if (m < 0)  { m = 11; y-- }
     if (m > 11) { m = 0;  y++ }
     router.push(`/contas?month=${m}&year=${y}`)
   }
 
   const [expandedBill, setExpandedBill] = useState<string | null>(null)
-  const [openAddBill,  setOpenAddBill]  = useState<boolean>(false)
-  const [openAddTx,    setOpenAddTx]    = useState<boolean>(false)
-  const [openAddMeta,  setOpenAddMeta]  = useState<boolean>(false)
+  const [openAddBill,  setOpenAddBill]  = useState(false)
+  const [openAddTx,    setOpenAddTx]    = useState(false)
+  const [openAddMeta,  setOpenAddMeta]  = useState(false)
 
   const [billForm, setBillForm] = useState<BillForm>({ title: '', total: '', dueDate: '', involved: [] })
   const [txForm,   setTxForm]   = useState<TxForm>({ description: '', category: 'food', amount: '', type: 'expense' })
@@ -172,31 +273,28 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
   const { userId, profile, moradores, bills, houseSummary, transactions, personalSummary, budgets } = data
   const houseId = profile.house_id!
 
-  const run = (fn: () => Promise<void>): void => {
-    startTransition(async () => { await fn(); router.refresh() })
-  }
+  const run = (fn: () => Promise<void>) => startTransition(async () => { await fn(); router.refresh() })
 
-  const handleMarkPaid   = (id: string): void => run(() => markParticipantAsPaid(id))
-  const handleNotify     = (id: string): void => run(() => markBillNotified(id))
-  const handleDeleteMeta = (id: string): void => run(() => deleteBudgetCategory(id))
+  const handleMarkPaid   = (id: string) => run(() => markParticipantAsPaid(id))
+  const handleNotify     = (id: string) => run(() => markBillNotified(id))
+  const handleDeleteMeta = (id: string) => run(() => deleteBudgetCategory(id))
 
-  const handleAddBill = (): void => {
+  const handleAddBill = () => {
     if (!billForm.title || !billForm.total || billForm.involved.length === 0) return
     const total = parseFloat(billForm.total.replace(',', '.'))
     const share = total / billForm.involved.length
     run(async () => {
       await addHouseBill({
-        houseId: profile.house_id!, userId,
-        title: billForm.title, total,
+        houseId: profile.house_id!, userId, title: billForm.title, total,
         dueDate: billForm.dueDate || new Date().toISOString().split('T')[0],
-        involved: billForm.involved.map((id: string) => ({ userId: id, amount: share })),
+        involved: billForm.involved.map(id => ({ userId: id, amount: share })),
       })
       setBillForm({ title: '', total: '', dueDate: '', involved: [] })
       setOpenAddBill(false)
     })
   }
 
-  const handleAddTx = (): void => {
+  const handleAddTx = () => {
     if (!txForm.description || !txForm.amount) return
     run(async () => {
       await addPersonalTransaction({
@@ -209,7 +307,7 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
     })
   }
 
-  const handleAddMeta = (): void => {
+  const handleAddMeta = () => {
     if (!metaForm.limitAmount) return
     const cat = CATEGORY_OPTIONS.find(c => c.value === metaForm.name)
     if (!cat) return
@@ -227,49 +325,41 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
     <div className="min-h-screen bg-gray-800 p-1 sm:p-2">
       <div className="bg-zinc-900 min-h-screen rounded-2xl sm:rounded-3xl p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-5">
 
-        {/* ── Header ────────────────────────────────────────────── */}
+        {/* Header */}
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <SidebarTrigger />
             <Separator orientation="vertical" className="mx-1 data-[orientation=vertical]:h-4" />
             <h1 className="text-white text-xl sm:text-2xl font-bold">Contas</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 bg-zinc-800 rounded-xl px-2 sm:px-3 py-1.5">
-              <button onClick={() => navigateMonth(-1)} className="text-zinc-400 hover:text-white transition-colors">
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="text-white text-xs sm:text-sm font-medium w-16 sm:w-20 text-center">
-                {MONTHS[monthIndex]} {year}
-              </span>
-              <button onClick={() => navigateMonth(1)} className="text-zinc-400 hover:text-white transition-colors">
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
+          <div className="flex items-center gap-1 bg-zinc-800 rounded-xl px-2 sm:px-3 py-1.5">
+            <button onClick={() => navigateMonth(-1)} className="text-zinc-400 hover:text-white transition-colors">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-white text-xs sm:text-sm font-medium w-16 sm:w-20 text-center">
+              {MONTHS[monthIndex]} {year}
+            </span>
+            <button onClick={() => navigateMonth(1)} className="text-zinc-400 hover:text-white transition-colors">
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
-        {/* ── Tabs ──────────────────────────────────────────────── */}
+        {/* Tabs */}
         <div className="flex gap-1 bg-zinc-800 p-1 rounded-2xl w-full sm:w-fit">
-          {([
-            { key: 'casa',    label: 'Casa',    icon: Home },
-            { key: 'pessoal', label: 'Pessoal', icon: User },
-          ] as const).map(({ key, label, icon: Icon }) => (
+          {([{ key: 'casa', label: 'Casa', icon: Home }, { key: 'pessoal', label: 'Pessoal', icon: User }] as const).map(({ key, label, icon: Icon }) => (
             <button key={key} onClick={() => setTab(key)}
               className={`flex items-center gap-2 flex-1 sm:flex-none sm:px-6 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                tab === key
-                  ? key === 'casa' ? 'bg-blue-600 text-white' : 'bg-violet-600 text-white'
-                  : 'text-zinc-400 hover:text-white'
+                tab === key ? key === 'casa' ? 'bg-blue-600 text-white' : 'bg-violet-600 text-white' : 'text-zinc-400 hover:text-white'
               }`}>
               <Icon className="w-4 h-4" />{label}
             </button>
           ))}
         </div>
 
-        {/* ══════════ CASA ════════════════════════════════════════ */}
+        {/* CASA */}
         {tab === 'casa' && (
           <div className="space-y-4">
-
             <div className="grid grid-cols-3 gap-2 sm:gap-3">
               <SummaryCard label="Você deve"  value={houseSummary.totalDebt}       accent="text-red-400"     border="border-red-500/20"     icon={TrendingDown} />
               <SummaryCard label="A receber"  value={houseSummary.totalReceivable} accent="text-emerald-400" border="border-emerald-500/20" icon={TrendingUp}   />
@@ -315,9 +405,7 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
                               <button key={m.id}
                                 onClick={() => setBillForm(f => ({
                                   ...f,
-                                  involved: sel
-                                    ? f.involved.filter((id: string) => id !== m.id)
-                                    : [...f.involved, m.id],
+                                  involved: sel ? f.involved.filter(id => id !== m.id) : [...f.involved, m.id],
                                 }))}
                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
                                   sel ? `${m.avatar_color} text-white` : 'bg-zinc-700 text-zinc-400 hover:text-white'
@@ -355,6 +443,8 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
                     const isExpanded = expandedBill === bill.id
                     const paidCount  = bill.participants.filter((p: Participant) => p.paid).length
                     const paidByUser = moradores.find((m: Morador) => m.id === bill.paidBy)
+                    // Chave PIX de quem pagou
+                    const creditorPixKey = (moradores.find((m: Morador) => m.id === bill.paidBy) as any)?.pix_key ?? null
 
                     return (
                       <div key={bill.id}>
@@ -362,10 +452,9 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
                           onClick={() => setExpandedBill(isExpanded ? null : bill.id)}
                           className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-700/30 transition-colors text-left"
                         >
-                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${
                             iOwe ? 'bg-red-400' : paidCount === bill.participants.length ? 'bg-emerald-400' : 'bg-amber-400'
                           }`} />
-
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-white text-sm font-medium">{bill.title}</span>
@@ -391,31 +480,23 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
                               </span>
                             </div>
                           </div>
-
-                          <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="flex items-center gap-2 shrink-0">
                             <span className="text-white font-bold text-sm">{fmt(bill.total)}</span>
                             {isExpanded ? <ChevronUp className="w-4 h-4 text-zinc-500" /> : <ChevronDown className="w-4 h-4 text-zinc-500" />}
                           </div>
                         </button>
 
                         {isExpanded && (
-                          <div className="px-4 pb-3 pt-1 bg-zinc-750 border-t border-zinc-700/30">
-                            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                          <div className="px-4 pb-3 pt-1 border-t border-zinc-700/30">
+                            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                               <span className="text-zinc-500 text-xs">
                                 Pago por: <span className="text-zinc-300">{paidByUser?.name.split(' ')[0]}</span>
                               </span>
                               <div className="flex items-center gap-1.5">
                                 {bill.paidBy === userId && pending.length > 0 && (
                                   <Button size="sm" variant="outline" onClick={() => handleNotify(bill.id)}
-                                    className={`text-xs h-7 gap-1 ${
-                                      bill.notified
-                                        ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10'
-                                        : 'border-amber-500/40 text-amber-400 bg-amber-500/10'
-                                    }`}>
-                                    {bill.notified
-                                      ? <><CheckCircle2 className="w-3 h-3" /> Notificado</>
-                                      : <><Bell className="w-3 h-3" /> Cobrar</>
-                                    }
+                                    className={`text-xs h-7 gap-1 ${bill.notified ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' : 'border-amber-500/40 text-amber-400 bg-amber-500/10'}`}>
+                                    {bill.notified ? <><CheckCircle2 className="w-3 h-3" />Notificado</> : <><Bell className="w-3 h-3" />Cobrar</>}
                                   </Button>
                                 )}
                                 <Button size="sm" variant="outline" onClick={() => run(() => deleteBill(bill.id))}
@@ -424,26 +505,52 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
                                 </Button>
                               </div>
                             </div>
+
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                               {bill.participants.map((p: Participant) => (
-                                <div key={p.id} className={`flex items-center gap-2 px-3 py-2 rounded-xl ${p.paid ? 'bg-emerald-500/5' : 'bg-red-500/5'}`}>
+                                <div key={p.id} className={`flex items-center gap-2 px-3 py-2.5 rounded-xl ${p.paid ? 'bg-emerald-500/5' : 'bg-red-500/5'}`}>
                                   <AvatarPill name={p.name} color={p.color} size="sm" />
                                   <span className="text-zinc-300 text-xs flex-1">{p.name.split(' ')[0]}</span>
                                   <span className="text-zinc-400 text-xs font-medium">{fmt(p.amount)}</span>
-                                  {p.paid
-                                    ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                                    : (
-                                      <div className="flex items-center gap-1.5">
-                                        <Clock className="w-3.5 h-3.5 text-red-400" />
-                                        {bill.paidBy === userId && (
-                                          <button onClick={() => handleMarkPaid(p.id)}
-                                            className="text-[10px] bg-zinc-700 hover:bg-zinc-600 text-zinc-300 px-2 py-0.5 rounded-full transition-colors">
-                                            Confirmar
-                                          </button>
-                                        )}
-                                      </div>
-                                    )
-                                  }
+                                  {p.paid ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                      {p.comprovanteUrl && (
+                                        <a href={p.comprovanteUrl} target="_blank" rel="noopener noreferrer"
+                                          className="text-[10px] text-emerald-500/70 hover:text-emerald-400 transition-colors">
+                                          <ImageIcon className="w-3 h-3" />
+                                        </a>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-1.5">
+                                      {/* Se é o próprio usuário que deve → botão PIX */}
+                                      {p.userId === userId && bill.paidBy !== userId ? (
+                                        creditorPixKey ? (
+                                          <PixModal
+                                            participant={p}
+                                            pixKey={creditorPixKey}
+                                            creditorName={paidByUser?.name ?? 'Morador'}
+                                            onSuccess={() => router.refresh()}
+                                          />
+                                        ) : (
+                                          // Sem chave PIX cadastrada — só confirmar manualmente
+                                          <span className="text-[10px] text-zinc-500 italic">Sem PIX</span>
+                                        )
+                                      ) : (
+                                        // É o credor vendo os outros pendentes
+                                        <div className="flex items-center gap-1.5">
+                                          <Clock className="w-3.5 h-3.5 text-red-400" />
+                                          {bill.paidBy === userId && (
+                                            <button onClick={() => handleMarkPaid(p.id)}
+                                              className="text-[10px] bg-zinc-700 hover:bg-zinc-600 text-zinc-300 px-2 py-0.5 rounded-full transition-colors">
+                                              Confirmar
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               ))}
                             </div>
@@ -458,25 +565,20 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
           </div>
         )}
 
-        {/* ══════════ PESSOAL ═════════════════════════════════════ */}
+        {/* PESSOAL */}
         {tab === 'pessoal' && (
           <div className="space-y-4">
-
             <div className="grid grid-cols-3 gap-2 sm:gap-3">
-              <SummaryCard
-                label="Saldo"
-                value={personalSummary.balance}
+              <SummaryCard label="Saldo"    value={personalSummary.balance}
                 accent={personalSummary.balance >= 0 ? 'text-emerald-400' : 'text-red-400'}
                 border={personalSummary.balance >= 0 ? 'border-emerald-500/20' : 'border-red-500/20'}
-                icon={Wallet}
-              />
+                icon={Wallet} />
               <SummaryCard label="Receitas" value={personalSummary.totalIncome}  accent="text-blue-400" border="border-blue-500/20" icon={TrendingUp}   />
               <SummaryCard label="Gastos"   value={personalSummary.totalExpense} accent="text-rose-400" border="border-rose-500/20" icon={TrendingDown} />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
-
-              {/* ── Metas ────────────────────────────────────────── */}
+              {/* Metas */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -485,9 +587,7 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
                   </div>
                   <Dialog open={openAddMeta} onOpenChange={setOpenAddMeta}>
                     <DialogTrigger asChild>
-                      <button className="text-violet-400 hover:text-violet-300 transition-colors">
-                        <Plus className="w-4 h-4" />
-                      </button>
+                      <button className="text-violet-400 hover:text-violet-300 transition-colors"><Plus className="w-4 h-4" /></button>
                     </DialogTrigger>
                     <DialogContent className="bg-zinc-800 border-zinc-700 text-white w-[calc(100vw-2rem)] max-w-sm rounded-2xl">
                       <DialogHeader><DialogTitle>Nova Meta de Gasto</DialogTitle></DialogHeader>
@@ -497,9 +597,7 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
                           <Select value={metaForm.name} onValueChange={v => setMetaForm(f => ({ ...f, name: v }))}>
                             <SelectTrigger className="bg-zinc-700 border-zinc-600 text-white"><SelectValue /></SelectTrigger>
                             <SelectContent className="bg-zinc-700 border-zinc-600">
-                              {CATEGORY_OPTIONS.map(c => (
-                                <SelectItem key={c.value} value={c.value} className="text-zinc-200">{c.label}</SelectItem>
-                              ))}
+                              {CATEGORY_OPTIONS.map(c => <SelectItem key={c.value} value={c.value} className="text-zinc-200">{c.label}</SelectItem>)}
                             </SelectContent>
                           </Select>
                         </div>
@@ -528,19 +626,16 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
                       return (
                         <div key={cat.id} className="bg-zinc-800 rounded-xl p-3 group">
                           <div className="flex items-center gap-2 mb-2">
-                            <div className={`w-7 h-7 rounded-lg ${categoryBg[cat.icon_name] ?? 'bg-zinc-700'} flex items-center justify-center flex-shrink-0`}>
+                            <div className={`w-7 h-7 rounded-lg ${categoryBg[cat.icon_name] ?? 'bg-zinc-700'} flex items-center justify-center shrink-0`}>
                               <Icon className={`w-3.5 h-3.5 ${cat.color}`} />
                             </div>
                             <span className="text-zinc-200 text-sm flex-1 font-medium">{cat.name}</span>
                             {over && <AlertCircle className="w-3.5 h-3.5 text-red-400" />}
                             <span className={`text-xs font-semibold ${over ? 'text-red-400' : 'text-zinc-300'}`}>
-                              {fmt(cat.spent)}
-                              <span className="text-zinc-600 font-normal"> / {fmt(cat.limit_amount)}</span>
+                              {fmt(cat.spent)}<span className="text-zinc-600 font-normal"> / {fmt(cat.limit_amount)}</span>
                             </span>
-                            <button
-                              onClick={() => handleDeleteMeta(cat.id)}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-600 hover:text-red-400 ml-1"
-                            >
+                            <button onClick={() => handleDeleteMeta(cat.id)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-600 hover:text-red-400 ml-1">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -562,7 +657,7 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
                 )}
               </div>
 
-              {/* ── Transações ───────────────────────────────────── */}
+              {/* Transações */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <h2 className="text-white font-semibold text-sm">Transações</h2>
@@ -581,9 +676,7 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
                             {(['expense', 'income'] as const).map(t => (
                               <button key={t} onClick={() => setTxForm(f => ({ ...f, type: t }))}
                                 className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                                  txForm.type === t
-                                    ? (t === 'expense' ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white')
-                                    : 'text-zinc-400 hover:text-white'
+                                  txForm.type === t ? (t === 'expense' ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white') : 'text-zinc-400 hover:text-white'
                                 }`}>
                                 {t === 'expense' ? 'Gasto' : 'Receita'}
                               </button>
@@ -600,9 +693,7 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
                               <Select value={txForm.category} onValueChange={v => setTxForm(f => ({ ...f, category: v }))}>
                                 <SelectTrigger className="bg-zinc-700 border-zinc-600 text-white"><SelectValue /></SelectTrigger>
                                 <SelectContent className="bg-zinc-700 border-zinc-600">
-                                  {CATEGORY_OPTIONS.map(c => (
-                                    <SelectItem key={c.value} value={c.value} className="text-zinc-200">{c.label}</SelectItem>
-                                  ))}
+                                  {CATEGORY_OPTIONS.map(c => <SelectItem key={c.value} value={c.value} className="text-zinc-200">{c.label}</SelectItem>)}
                                 </SelectContent>
                               </Select>
                             </div>
@@ -630,7 +721,7 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
                         const bg    = tx.type === 'income' ? 'bg-emerald-500/10' : (categoryBg[tx.category] ?? 'bg-zinc-700')
                         return (
                           <div key={tx.id} className="group flex items-center gap-3 px-4 py-3 hover:bg-zinc-700/30 transition-colors">
-                            <div className={`w-8 h-8 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}>
+                            <div className={`w-8 h-8 rounded-xl ${bg} flex items-center justify-center shrink-0`}>
                               <Icon className={`w-3.5 h-3.5 ${color}`} />
                             </div>
                             <div className="flex-1 min-w-0">
@@ -639,13 +730,11 @@ export default function ContasClient({ data, initialMonth, initialYear }: Contas
                                 {categoryLabel[tx.category] ?? tx.category} · {new Date(tx.date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
                               </p>
                             </div>
-                            <span className={`font-semibold text-sm flex-shrink-0 ${tx.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            <span className={`font-semibold text-sm shrink-0 ${tx.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
                               {tx.type === 'income' ? '+' : '-'}{fmt(tx.amount)}
                             </span>
-                            <button
-                              onClick={() => run(() => deleteTransaction(tx.id))}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-red-500/10 text-zinc-600 hover:text-red-400 flex-shrink-0"
-                            >
+                            <button onClick={() => run(() => deleteTransaction(tx.id))}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-red-500/10 text-zinc-600 hover:text-red-400 shrink-0">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>

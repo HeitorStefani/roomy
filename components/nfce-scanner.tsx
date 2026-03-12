@@ -40,8 +40,8 @@ type Step          = 'scan' | 'loading' | 'select-items' | 'new-items' | 'saving
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const UNITS = ['un', 'kg', 'g', 'L', 'ml', 'rolo', 'cx', 'pct']
-const CATEGORIES_CASA    = ['Limpeza', 'Banheiro', 'Alimentos', 'Outros']
-const CATEGORIES_PESSOAL = ['Higiene', 'Farmácia', 'Outros']
+const CATEGORIES_CASA    = ['Limpeza', 'Banheiro', 'Alimentos', 'Sonhos Eróticos', 'Drogas', 'Outros']
+const CATEGORIES_PESSOAL = ['Higiene', 'Farmácia', 'Alimentos', 'Limpeza', 'Outros']
 
 // ── Categorias de transação (mesmo padrão do projeto) ─────────────────────────
 
