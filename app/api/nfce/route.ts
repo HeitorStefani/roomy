@@ -35,6 +35,8 @@ function extractEstabelecimento($: cheerio.CheerioAPI) {
 
 function extractTotals($: cheerio.CheerioAPI) {
   let total_itens: number | null = null
+  let subtotal: number | null = null
+  let desconto: number | null = null
   let valor_pagar: number | null = null
   let forma_pagamento: string | null = null
 
@@ -48,6 +50,13 @@ function extractTotals($: cheerio.CheerioAPI) {
     if (/qtd\.?\s*total\s*de\s*itens/i.test(label)) {
       const m = valor.match(/\d+/)
       if (m) total_itens = parseInt(m[0])
+    } else if (/valor\s*total\s*bruto|subtotal/i.test(label)) {
+      // Subtotal ANTES do desconto
+      subtotal = toFloatBr(valor)
+    } else if (/desconto/i.test(label)) {
+      // Desconto pode vir como "-R$ 5,00" ou "R$ 5,00"
+      const raw = toFloatBr(valor)
+      if (raw !== null) desconto = Math.abs(raw)
     } else if (/valor\s*a\s*pagar/i.test(label)) {
       valor_pagar = toFloatBr(valor)
     } else if (/forma\s*de\s*pagamento|cartão|débito|crédito|pix/i.test(label)) {
@@ -68,7 +77,13 @@ function extractTotals($: cheerio.CheerioAPI) {
     })
   }
 
-  return { total_itens, valor_pagar, forma_pagamento }
+  // Prioridade: valor_pagar (já com desconto) > subtotal - desconto > subtotal
+  const valor_final =
+    valor_pagar ??
+    (subtotal !== null && desconto !== null ? subtotal - desconto : null) ??
+    subtotal
+
+  return { total_itens, valor_pagar: valor_final, forma_pagamento }
 }
 
 function extractItems($: cheerio.CheerioAPI) {
