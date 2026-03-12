@@ -295,8 +295,18 @@ export function NfceScanner({ userId, houseId, moradores, mode }: {
   const toggleAll = () =>
     setSelectedItems(prev => prev.size === data!.itens.length ? new Set() : new Set(data!.itens.map((_, i) => i)))
 
+  const totalBruto = data
+  ? data.itens.reduce((s, item) => s + (item.valor_total ?? 0), 0)
+  : 0
+
+  const descontoFator = (data?.valor_pagar != null && totalBruto > 0)
+    ? data.valor_pagar / totalBruto  // ex: 58,38 / 68,07 = 0.857...
+    : 1
+
   const totalSelecionado = data
-    ? data.itens.filter((_, i) => selectedItems.has(i)).reduce((s, item) => s + (item.valor_total ?? 0), 0)
+    ? data.itens
+        .filter((_, i) => selectedItems.has(i))
+        .reduce((s, item) => s + (item.valor_total ?? 0), 0) * descontoFator
     : 0
 
   // ── Avança para new-items ou direto para saving ──────────────────────────
@@ -362,6 +372,16 @@ export function NfceScanner({ userId, houseId, moradores, mode }: {
           houseId, userId, title: descBase, total: valorFinal,
           dueDate: new Date().toISOString().split('T')[0],
           involved: sel.map(id => ({ userId: id, amount: valorFinal / sel.length })),
+          // Passa os itens selecionados com valor proporcional ao desconto
+          items: itensEscolhidos
+            .filter(i => i.descricao)
+            .map(i => ({
+              descricao:   i.descricao!,
+              quantidade:  i.quantidade,
+              unidade:     i.unidade,
+              valor_unit:  i.valor_unit,
+              valor_total: i.valor_total != null ? i.valor_total * descontoFator : null,
+            })),
         })
       }
 

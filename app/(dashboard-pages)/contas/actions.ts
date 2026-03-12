@@ -16,14 +16,22 @@ export async function markBillNotified(billId: string) {
 }
 
 export async function addHouseBill(formData: {
-  houseId: string
-  userId: string
-  title: string
-  total: number
-  dueDate: string
+  houseId:  string
+  userId:   string
+  title:    string
+  total:    number
+  dueDate:  string
   involved: { userId: string; amount: number }[]
+  items?:   {
+    descricao:   string
+    quantidade:  number | null
+    unidade:     string | null
+    valor_unit:  number | null
+    valor_total: number | null
+  }[]
 }) {
   const supabase = await createClient()
+
   const { data: bill, error } = await supabase
     .from('house_bills')
     .insert({
@@ -36,7 +44,9 @@ export async function addHouseBill(formData: {
     })
     .select('id')
     .single()
+
   if (error || !bill) return
+
   await supabase.from('bill_participants').insert(
     formData.involved.map(p => ({
       bill_id: bill.id,
@@ -45,16 +55,31 @@ export async function addHouseBill(formData: {
       paid:    p.userId === formData.userId,
     }))
   )
+
+  // Salva itens da NFC-e se existirem
+  if (formData.items && formData.items.length > 0) {
+    await supabase.from('bill_items').insert(
+      formData.items.map(item => ({
+        bill_id:     bill.id,
+        descricao:   item.descricao,
+        quantidade:  item.quantidade,
+        unidade:     item.unidade,
+        valor_unit:  item.valor_unit,
+        valor_total: item.valor_total,
+      }))
+    )
+  }
+
   revalidatePath('/contas')
 }
 
 export async function addPersonalTransaction(data: {
-  userId: string
+  userId:      string
   description: string
-  category: string
-  amount: number
-  type: 'expense' | 'income'
-  date: string
+  category:    string
+  amount:      number
+  type:        'expense' | 'income'
+  date:        string
 }) {
   const supabase = await createClient()
   await supabase.from('personal_transactions').insert({
@@ -69,10 +94,10 @@ export async function addPersonalTransaction(data: {
 }
 
 export async function addBudgetCategory(data: {
-  userId: string
-  name: string
-  iconName: string
-  color: string
+  userId:      string
+  name:        string
+  iconName:    string
+  color:       string
   limitAmount: number
 }) {
   const supabase = await createClient()
@@ -95,6 +120,7 @@ export async function deleteBudgetCategory(categoryId: string) {
 export async function deleteBill(billId: string) {
   const supabase = await createClient()
   await supabase.from('bill_participants').delete().eq('bill_id', billId)
+  await supabase.from('bill_items').delete().eq('bill_id', billId)
   await supabase.from('house_bills').delete().eq('id', billId)
   revalidatePath('/contas')
 }
@@ -126,7 +152,6 @@ export async function uploadComprovante(formData: FormData) {
 
   const { data: { publicUrl } } = supabase.storage.from('comprovantes').getPublicUrl(filePath)
 
-  // Salva URL do comprovante e marca como pago
   await supabase
     .from('bill_participants')
     .update({ paid: true, comprovante_url: publicUrl })

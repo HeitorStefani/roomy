@@ -20,6 +20,7 @@ import {
   DollarSign, Target, Wallet, AlertCircle, Check,
   ChevronDown, ChevronUp, Trash2, MoreHorizontal,
   QrCode, Copy, Upload, Loader2, ImageIcon, ExternalLink,
+  ShoppingCart,
   type LucideIcon,
 } from 'lucide-react'
 import {
@@ -34,6 +35,7 @@ type ContasData  = NonNullable<Awaited<ReturnType<typeof getContasData>>>
 type TabType     = 'casa' | 'pessoal'
 type Morador     = ContasData['moradores'][number]
 type Bill        = ContasData['bills'][number]
+type BillItem    = Bill['items'][number]
 type Participant = Bill['participants'][number]
 type Transaction = ContasData['transactions'][number]
 type Budget      = ContasData['budgets'][number]
@@ -97,12 +99,13 @@ function SummaryCard({ label, value, accent, border, icon: Icon }: {
 
 // ── Modal PIX ─────────────────────────────────────────────────────────────────
 function PixModal({
-  participant, pixKey, creditorName, onSuccess,
+  participant, pixKey, creditorName, billItems, onSuccess,
 }: {
-  participant: Participant
-  pixKey: string
+  participant:  Participant
+  pixKey:       string
   creditorName: string
-  onSuccess: () => void
+  billItems:    BillItem[]
+  onSuccess:    () => void
 }) {
   const [open,       setOpen]       = useState(false)
   const [copied,     setCopied]     = useState(false)
@@ -176,6 +179,37 @@ function PixModal({
             <p className="text-zinc-400 text-xs mb-1">Valor a pagar para {creditorName.split(' ')[0]}</p>
             <p className="text-white text-3xl font-bold">{fmt(participant.amount)}</p>
           </div>
+
+          {/* Itens da compra */}
+          {billItems.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-zinc-400 text-xs font-medium flex items-center gap-1.5">
+                <ShoppingCart className="w-3 h-3" /> O que você está pagando
+              </p>
+              <div className="bg-zinc-900 rounded-xl border border-zinc-700/50 overflow-hidden max-h-44 overflow-y-auto">
+                <div className="divide-y divide-zinc-800">
+                  {billItems.map((item, i) => (
+                    <div key={item.id ?? i} className="flex items-center gap-2 px-3 py-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-zinc-200 text-xs truncate">{item.descricao}</p>
+                        {item.quantidade != null && (
+                          <p className="text-zinc-600 text-[10px]">
+                            {item.quantidade} {item.unidade ?? 'un'}
+                            {item.valorUnit ? ` × ${fmt(item.valorUnit)}` : ''}
+                          </p>
+                        )}
+                      </div>
+                      {item.valorTotal != null && (
+                        <span className="text-zinc-300 text-xs font-medium shrink-0">
+                          {fmt(item.valorTotal)}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Chave PIX */}
           <div className="space-y-2">
@@ -443,7 +477,6 @@ export default function ContasClient({ data, initialMonth, initialYear }: {
                     const isExpanded = expandedBill === bill.id
                     const paidCount  = bill.participants.filter((p: Participant) => p.paid).length
                     const paidByUser = moradores.find((m: Morador) => m.id === bill.paidBy)
-                    // Chave PIX de quem pagou
                     const creditorPixKey = (moradores.find((m: Morador) => m.id === bill.paidBy) as any)?.pix_key ?? null
 
                     return (
@@ -524,21 +557,19 @@ export default function ContasClient({ data, initialMonth, initialYear }: {
                                     </div>
                                   ) : (
                                     <div className="flex items-center gap-1.5">
-                                      {/* Se é o próprio usuário que deve → botão PIX */}
                                       {p.userId === userId && bill.paidBy !== userId ? (
                                         creditorPixKey ? (
                                           <PixModal
                                             participant={p}
                                             pixKey={creditorPixKey}
                                             creditorName={paidByUser?.name ?? 'Morador'}
+                                            billItems={bill.items ?? []}
                                             onSuccess={() => router.refresh()}
                                           />
                                         ) : (
-                                          // Sem chave PIX cadastrada — só confirmar manualmente
                                           <span className="text-[10px] text-zinc-500 italic">Sem PIX</span>
                                         )
                                       ) : (
-                                        // É o credor vendo os outros pendentes
                                         <div className="flex items-center gap-1.5">
                                           <Clock className="w-3.5 h-3.5 text-red-400" />
                                           {bill.paidBy === userId && (
