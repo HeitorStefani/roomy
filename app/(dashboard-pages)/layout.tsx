@@ -24,7 +24,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           avatarUrl:   profile.avatar_url ?? null,
         } : undefined}
       />
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto text-white">
         {children}
       </main>
     </SidebarProvider>
