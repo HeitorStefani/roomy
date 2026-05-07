@@ -45,10 +45,12 @@ export async function createSession(user: CurrentUser) {
     .sign(sessionSecret())
 
   const cookieStore = await cookies()
+  const isHttps = process.env.PUBLIC_BASE_URL?.startsWith('https') === true
+
   cookieStore.set(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.PUBLIC_BASE_URL?.startsWith('https') ?? process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production' && isHttps,
     path: '/',
     maxAge: 60 * 60 * 24 * 30,
   })
