@@ -4,8 +4,9 @@ import { requireAdmin } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { createAdminUser, createHouse, resetUserPassword, updateAdminUser, updateHouseName } from './actions'
+import { createAdminUser, createHouse, resetUserPassword, updateAdminUser, updateHouseName, moveUserToHouse } from './actions'
 import { DeleteUserButton } from './delete-user-button'
+import { DeleteHouseButton } from './delete-house-button'
 
 type House = { id: string; name: string; invite_code: string }
 type User = {
@@ -93,14 +94,17 @@ export default async function AdminPage() {
             <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
               <h2 className="text-lg font-semibold">Renomear república</h2>
               {houses.map(h => (
-                <form key={h.id} action={updateHouseName} className="flex gap-2 items-end">
-                  <input type="hidden" name="houseId" value={h.id} />
-                  <label className="flex-1 space-y-1">
-                    <Label className="text-zinc-400 text-xs">{h.invite_code}</Label>
-                    <Input name="name" defaultValue={h.name} required className="bg-zinc-800 border-zinc-700" />
-                  </label>
-                  <Button variant="outline" className="border-zinc-700 bg-zinc-800 text-white hover:bg-zinc-700">Salvar</Button>
-                </form>
+                <div key={h.id} className="flex gap-2 items-end">
+                  <form action={updateHouseName} className="flex gap-2 items-end flex-1">
+                    <input type="hidden" name="houseId" value={h.id} />
+                    <label className="flex-1 space-y-1">
+                      <Label className="text-zinc-400 text-xs">{h.invite_code}</Label>
+                      <Input name="name" defaultValue={h.name} required className="bg-zinc-800 border-zinc-700" />
+                    </label>
+                    <Button variant="outline" className="border-zinc-700 bg-zinc-800 text-white hover:bg-zinc-700 shrink-0">Salvar</Button>
+                  </form>
+                  <DeleteHouseButton houseId={h.id} houseName={h.name} />
+                </div>
               ))}
             </div>
           </div>
@@ -149,6 +153,17 @@ export default async function AdminPage() {
                   </form>
                   <DeleteUserButton userId={user.id} userName={user.name} />
                 </div>
+                {houses.filter(h => h.id !== user.house_id).length > 0 && (
+                  <form action={moveUserToHouse} className="mt-2 flex gap-2 items-center max-w-sm">
+                    <input type="hidden" name="userId" value={user.id} />
+                    <select name="houseId" className="h-9 flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-3 text-sm text-zinc-300">
+                      {houses.filter(h => h.id !== user.house_id).map(h => (
+                        <option key={h.id} value={h.id}>{h.name}</option>
+                      ))}
+                    </select>
+                    <Button variant="outline" size="sm" className="border-zinc-700 bg-zinc-800 text-white hover:bg-zinc-700 shrink-0">Mover</Button>
+                  </form>
+                )}
                 <p className="mt-2 text-xs text-zinc-500">{user.house_name} - ID: {user.id}</p>
               </div>
             ))}
