@@ -28,7 +28,7 @@ export async function getDashboardData() {
     { rows: shoppingRows },
   ] = await Promise.all([
     query<{ id: string; title: string; due_date: string | null; priority: string; status: string; overdue: boolean; room: string | null }>(
-      `select id, title, due_date, priority, status, overdue, room
+      `select id, title, due_date::text as due_date, priority, status, overdue, room
        from tasks
        where house_id = $1 and assigned_to = $2 and status <> 'done'
        order by due_date asc nulls last
