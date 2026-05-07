@@ -98,3 +98,26 @@ export async function createHouse(formData: FormData) {
 
   revalidatePath('/admin')
 }
+
+export async function updateHouseName(formData: FormData) {
+  await assertAdmin()
+  const houseId = String(formData.get('houseId') ?? '')
+  const name = String(formData.get('name') ?? '').trim()
+
+  if (!houseId || !name) return
+
+  await query('update houses set name = $1 where id = $2', [name, houseId])
+
+  revalidatePath('/admin')
+}
+
+export async function deleteUser(formData: FormData) {
+  await assertAdmin()
+  const userId = String(formData.get('userId') ?? '')
+
+  if (!userId) return
+
+  await query('delete from users where id = $1', [userId])
+
+  revalidatePath('/admin')
+}

@@ -4,7 +4,8 @@ import { requireAdmin } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { createAdminUser, createHouse, assignTaskAsAdmin, resetUserPassword, updateAdminUser } from './actions'
+import { createAdminUser, createHouse, resetUserPassword, updateAdminUser, updateHouseName } from './actions'
+import { DeleteUserButton } from './delete-user-button'
 
 type House = { id: string; name: string; invite_code: string }
 type User = {
@@ -17,21 +18,13 @@ type User = {
   telegram_chat_id: string | null
   pix_key: string | null
 }
-type Task = {
-  id: string
-  title: string
-  status: string
-  assigned_to: string | null
-  due_date: string | null
-}
-
 export default async function AdminPage() {
   const admin = await requireAdmin()
   if (!admin) redirect('/dashboard')
 
   const houseId = admin.profile.house_id
 
-  const [{ rows: houses }, { rows: users }, { rows: tasks }] = await Promise.all([
+  const [{ rows: houses }, { rows: users }] = await Promise.all([
     query<House>('select id, name, invite_code from houses order by name asc'),
     query<User>(
       `select u.id, u.name, u.ra, u.role, u.house_id, h.name as house_name,
@@ -39,13 +32,6 @@ export default async function AdminPage() {
        from users u
        join houses h on h.id = u.house_id
        order by h.name asc, u.name asc`,
-    ),
-    query<Task>(
-      `select id, title, status, assigned_to, due_date
-       from tasks
-       where house_id = $1
-       order by due_date asc nulls last, title asc`,
-      [houseId],
     ),
   ])
 
@@ -90,21 +76,34 @@ export default async function AdminPage() {
             <Button className="bg-yellow-500 text-black hover:bg-yellow-400">Criar usuario</Button>
           </form>
 
-          <form action={createHouse} className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-            <h2 className="text-lg font-semibold">Criar casa</h2>
-            <label className="space-y-1 block">
-              <Label>Nome da casa</Label>
-              <Input name="name" required className="bg-zinc-800 border-zinc-700" />
-            </label>
-            <label className="space-y-1 block">
-              <Label>Codigo de convite</Label>
-              <Input name="inviteCode" required className="bg-zinc-800 border-zinc-700 uppercase" />
-            </label>
-            <Button variant="outline" className="border-zinc-700 bg-zinc-800 text-white hover:bg-zinc-700">Criar casa</Button>
-            <div className="space-y-1 text-sm text-zinc-400">
-              {houses.map(h => <p key={h.id}>{h.name}: <span className="text-zinc-200">{h.invite_code}</span></p>)}
+          <div className="space-y-4">
+            <form action={createHouse} className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+              <h2 className="text-lg font-semibold">Criar casa</h2>
+              <label className="space-y-1 block">
+                <Label>Nome da casa</Label>
+                <Input name="name" required className="bg-zinc-800 border-zinc-700" />
+              </label>
+              <label className="space-y-1 block">
+                <Label>Codigo de convite</Label>
+                <Input name="inviteCode" required className="bg-zinc-800 border-zinc-700 uppercase" />
+              </label>
+              <Button variant="outline" className="border-zinc-700 bg-zinc-800 text-white hover:bg-zinc-700">Criar casa</Button>
+            </form>
+
+            <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+              <h2 className="text-lg font-semibold">Renomear república</h2>
+              {houses.map(h => (
+                <form key={h.id} action={updateHouseName} className="flex gap-2 items-end">
+                  <input type="hidden" name="houseId" value={h.id} />
+                  <label className="flex-1 space-y-1">
+                    <Label className="text-zinc-400 text-xs">{h.invite_code}</Label>
+                    <Input name="name" defaultValue={h.name} required className="bg-zinc-800 border-zinc-700" />
+                  </label>
+                  <Button variant="outline" className="border-zinc-700 bg-zinc-800 text-white hover:bg-zinc-700">Salvar</Button>
+                </form>
+              ))}
             </div>
-          </form>
+          </div>
         </section>
 
         <section className="space-y-4">
@@ -142,37 +141,16 @@ export default async function AdminPage() {
                   </div>
                 </form>
 
-                <form action={resetUserPassword} className="mt-3 flex max-w-md gap-2">
-                  <input type="hidden" name="userId" value={user.id} />
-                  <Input name="password" type="password" placeholder="Nova senha" required className="bg-zinc-800 border-zinc-700" />
-                  <Button variant="outline" className="border-zinc-700 bg-zinc-800 text-white hover:bg-zinc-700">Alterar senha</Button>
-                </form>
+                <div className="mt-3 flex flex-wrap gap-2 items-center">
+                  <form action={resetUserPassword} className="flex gap-2 flex-1 max-w-md">
+                    <input type="hidden" name="userId" value={user.id} />
+                    <Input name="password" type="password" placeholder="Nova senha" required className="bg-zinc-800 border-zinc-700" />
+                    <Button variant="outline" className="border-zinc-700 bg-zinc-800 text-white hover:bg-zinc-700 shrink-0">Alterar senha</Button>
+                  </form>
+                  <DeleteUserButton userId={user.id} userName={user.name} />
+                </div>
                 <p className="mt-2 text-xs text-zinc-500">{user.house_name} - ID: {user.id}</p>
               </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold">Atribuir tarefas</h2>
-          <div className="grid gap-3">
-            {tasks.map(task => (
-              <form key={task.id} action={assignTaskAsAdmin} className="grid gap-3 rounded-lg border border-zinc-800 bg-zinc-900 p-4 md:grid-cols-[1fr_.8fr_.8fr_auto]">
-                <input type="hidden" name="taskId" value={task.id} />
-                <div>
-                  <p className="font-medium">{task.title}</p>
-                  <p className="text-xs text-zinc-500">Vence: {task.due_date ? new Date(task.due_date).toLocaleDateString('pt-BR') : '-'}</p>
-                </div>
-                <select name="assignedTo" defaultValue={task.assigned_to ?? ''} className="h-10 rounded-md border border-zinc-700 bg-zinc-800 px-3 text-sm">
-                  {users.filter(u => u.house_id === houseId).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-                <select name="status" defaultValue={task.status} className="h-10 rounded-md border border-zinc-700 bg-zinc-800 px-3 text-sm">
-                  <option value="todo">A fazer</option>
-                  <option value="doing">Fazendo</option>
-                  <option value="done">Concluida</option>
-                </select>
-                <Button className="bg-yellow-500 text-black hover:bg-yellow-400">Atualizar</Button>
-              </form>
             ))}
           </div>
         </section>

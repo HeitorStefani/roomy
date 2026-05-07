@@ -61,11 +61,6 @@ export async function moveTask(taskId: string, newStatus: 'todo' | 'doing' | 'do
     await client.query('update tasks set status = $1, updated_at = now() where id = $2', [newStatus, taskId])
 
     if (newStatus === 'done') {
-      await client.query(
-        'insert into task_history (task_id, done_by, done_at) values ($1, $2, now())',
-        [taskId, userId],
-      )
-
       if (task.recurrence !== 'unica' && task.recurrence !== 'única') {
         let memberIds = task.rotation_members ?? []
         if (!memberIds.length) {

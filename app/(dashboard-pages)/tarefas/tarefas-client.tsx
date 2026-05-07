@@ -8,7 +8,7 @@ import {
   type DragStartEvent, type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -16,16 +16,15 @@ import { SidebarTrigger } from '@/components/ui/sidebar'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  Plus, CheckCircle2, Clock, AlertCircle, RotateCcw,
-  ChevronRight, History, User, Flame, ArrowRight,
-  CalendarClock, Repeat2, ListFilter, GripVertical,
+  Plus, CheckCircle2, Clock, AlertCircle,
+  ChevronRight, Flame,
+  Repeat2, ListFilter, GripVertical,
   Pencil, CalendarDays, Lock, Loader2,
 } from 'lucide-react'
 import { moveTask, addTask, editTask } from './actions'
@@ -38,8 +37,6 @@ type Recurrence  = 'única' | 'diária' | '2x-semana' | 'semanal' | 'quinzenal' 
 
 type Task        = TarefasData['tasks'][number]
 type Morador     = TarefasData['moradores'][number]
-type HistoryItem = TarefasData['history'][number]
-
 const ROOMS = ['Cozinha', 'Banheiro', 'Sala', 'Quintal', 'Geral']
 
 const RECURRENCE_LABELS: Record<Recurrence, string> = {
@@ -419,83 +416,6 @@ function DroppableColumn({ col, tasks, moradores, userId, onMove, onEdit, isOver
   )
 }
 
-// ── History Sidebar ───────────────────────────────────────────────────────────
-function HistorySidebarContent({ history, tasks, moradores }: {
-  history: TarefasData['history']; tasks: TarefasData['tasks']; moradores: Morador[]
-}) {
-  const scoreboard = [...moradores].map((m: Morador) => ({
-    ...m, done: history.filter((h: HistoryItem) => h.doneBy === m.id).length,
-  })).sort((a, b) => b.done - a.done)
-
-  return (
-    <div className="space-y-4">
-      <Card className="bg-zinc-800 border-none">
-        <CardHeader className="pb-2">
-          <div className="flex items-center gap-2"><User className="w-4 h-4 text-yellow-500" /><CardTitle className="text-white text-sm">Ranking do mês</CardTitle></div>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {scoreboard.map((m, i) => (
-            <div key={m.id} className="flex items-center gap-2.5">
-              <span className={`text-xs font-bold w-4 ${i === 0 ? 'text-yellow-400' : 'text-zinc-600'}`}>{i + 1}º</span>
-              <div className={`w-6 h-6 rounded-full ${m.avatar_color} flex items-center justify-center text-white text-[10px] font-bold`}>{m.name[0]}</div>
-              <span className="text-zinc-300 text-sm flex-1">{m.name.split(' ')[0]}</span>
-              <span className="text-zinc-400 text-xs">{m.done} feitas</span>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card className="bg-zinc-800 border-none">
-        <CardHeader className="pb-2">
-          <div className="flex items-center gap-2"><RotateCcw className="w-4 h-4 text-blue-400" /><CardTitle className="text-white text-sm">Próxima rotatividade</CardTitle></div>
-          <CardDescription className="text-zinc-500 text-xs">Quando concluída, passa para:</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {tasks.filter((t: Task) => t.recurrence !== 'única' && t.status !== 'done').slice(0, 4).map((t: Task) => {
-            const rotMembers = t.rotationMembers?.length
-              ? moradores.filter((m: Morador) => t.rotationMembers!.includes(m.id)).sort((a, b) => a.name.localeCompare(b.name))
-              : [...moradores].sort((a, b) => a.name.localeCompare(b.name))
-            const currIdx = rotMembers.findIndex((m: Morador) => m.id === t.assignedTo)
-            const nextM   = rotMembers[(currIdx + 1) % rotMembers.length]
-            return (
-              <div key={t.id} className="flex items-center gap-2 bg-zinc-900 p-2 rounded-lg">
-                <span className="text-zinc-400 text-xs flex-1 truncate">{t.title}</span>
-                <ArrowRight className="w-3 h-3 text-zinc-600 shrink-0" />
-                <div className={`w-5 h-5 rounded-full ${nextM?.avatar_color} flex items-center justify-center text-white text-[9px] font-bold`}>{nextM?.name[0]}</div>
-              </div>
-            )
-          })}
-        </CardContent>
-      </Card>
-
-      <Card className="bg-zinc-800 border-none">
-        <CardHeader className="pb-2">
-          <div className="flex items-center gap-2"><History className="w-4 h-4 text-zinc-400" /><CardTitle className="text-white text-sm">Histórico</CardTitle></div>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {history.length === 0 ? (
-            <p className="text-zinc-600 text-xs text-center py-4">Nenhuma tarefa concluída ainda.</p>
-          ) : (
-            history.slice(0, 6).map((h: HistoryItem) => {
-              const m = moradores.find((x: Morador) => x.id === h.doneBy)
-              return (
-                <div key={h.id} className="flex items-start gap-2">
-                  <div className={`w-5 h-5 rounded-full ${m?.avatar_color ?? 'bg-zinc-600'} flex items-center justify-center text-white text-[9px] font-bold shrink-0 mt-0.5`}>{(m?.name ?? '?')[0]}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-zinc-300 text-xs leading-snug truncate">{h.taskTitle}</p>
-                    <p className="text-zinc-600 text-[10px]">{m?.name.split(' ')[0]} · {h.doneAt}</p>
-                  </div>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
-                </div>
-              )
-            })
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
 // ── Completion Celebration Overlay ───────────────────────────────────────────
 const CELEBRATION_MESSAGES = [
   { title: 'Arrasou! 💪', sub: 'A casa tá orgulhosa de você.' },
@@ -635,14 +555,13 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
   const router              = useRouter()
   const [, startTransition] = useTransition()
 
-  const { userId, profile, moradores, tasks, history } = data as {
+  const { userId, profile, moradores, tasks } = data as {
     userId: string; profile: TarefasData['profile']
-    moradores: Morador[]; tasks: Task[]; history: TarefasData['history']
+    moradores: Morador[]; tasks: Task[]
   }
 
   const [filterMorador,    setFilterMorador]    = useState('todos')
   const [filterRecurrence, setFilterRecurrence] = useState('todas')
-  const [showHistory,      setShowHistory]      = useState(false)
   const [openAdd,          setOpenAdd]          = useState(false)
   const [editingTask,      setEditingTask]      = useState<Task | null>(null)
   const [activeTask,       setActiveTask]       = useState<Task | null>(null)
@@ -810,10 +729,6 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
             <h1 className="text-white text-xl sm:text-2xl font-bold mx-1 sm:mx-2">Tarefas da Casa</h1>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowHistory(v => !v)}
-              className={`flex items-center gap-1.5 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 rounded-xl border transition-all ${showHistory ? 'bg-zinc-700 border-zinc-600 text-white' : 'border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800'}`}>
-              <History className="w-4 h-4" /><span className="hidden sm:inline">Histórico</span>
-            </button>
             <Dialog open={openAdd} onOpenChange={setOpenAdd}>
               <DialogTrigger asChild>
                 <Button size="sm" className="bg-yellow-500 hover:bg-yellow-400 text-zinc-900 font-semibold gap-1 sm:gap-1.5 text-xs sm:text-sm">
@@ -845,12 +760,11 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
         </Dialog>
 
         {/* Summary */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        <div className="grid grid-cols-3 gap-3 sm:gap-4">
           {[
             { label: 'Total',      value: totalCount,   icon: ListFilter,   accent: 'text-zinc-300',    border: 'border-zinc-700'       },
             { label: 'Concluídas', value: doneCount,    icon: CheckCircle2, accent: 'text-emerald-400', border: 'border-emerald-500/20' },
             { label: 'Atrasadas',  value: overdueCount, icon: AlertCircle,  accent: 'text-red-400',     border: 'border-red-500/20'     },
-            { label: 'Conclusão',  value: totalCount > 0 ? `${Math.round((doneCount / totalCount) * 100)}%` : '0%', icon: CalendarClock, accent: 'text-blue-400', border: 'border-blue-500/20' },
           ].map(({ label, value, icon: Icon, accent, border }) => (
             <Card key={label} className={`bg-zinc-800 border ${border}`}>
               <CardHeader className="pb-2 p-3 sm:p-4 sm:pb-2">
@@ -891,41 +805,24 @@ export default function TarefasClient({ data }: { data: TarefasData }) {
         </div>
 
         {/* Kanban */}
-        <Sheet open={showHistory} onOpenChange={setShowHistory}>
-          <SheetContent side="right" className="bg-zinc-900 border-zinc-800 text-white w-[300px] sm:w-[320px] overflow-y-auto p-4 block lg:hidden">
-            <SheetHeader className="mb-4">
-              <SheetTitle className="text-white flex items-center gap-2"><History className="w-4 h-4 text-zinc-400" />Histórico & Ranking</SheetTitle>
-            </SheetHeader>
-            <HistorySidebarContent history={history} tasks={tasks} moradores={moradores} />
-          </SheetContent>
-        </Sheet>
-
-        <div className={`grid gap-5 ${showHistory ? 'lg:grid-cols-[1fr_260px]' : 'grid-cols-1'}`}>
-          <DndContext sensors={sensors} collisionDetection={closestCorners}
-            onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-              {columns.map(col => (
-                <DroppableColumn key={col.key} col={col}
-                  tasks={filtered.filter(t => t.status === col.key)}
-                  moradores={moradores} userId={userId}
-                  onMove={handleMoveTask} onEdit={handleOpenEdit}
-                  isOver={overColumn === col.key} fadingIds={fadingIds} />
-              ))}
-            </div>
-            <DragOverlay dropAnimation={{ duration: 180, easing: 'ease' }}>
-              {activeTask ? (
-                <TaskCardInner task={activeTask} moradores={moradores} userId={userId}
-                  onMove={() => Promise.resolve()} onEdit={() => {}} isDragOverlay />
-              ) : null}
-            </DragOverlay>
-          </DndContext>
-
-          {showHistory && (
-            <div className="hidden lg:block space-y-4">
-              <HistorySidebarContent history={history} tasks={tasks} moradores={moradores} />
-            </div>
-          )}
-        </div>
+        <DndContext sensors={sensors} collisionDetection={closestCorners}
+          onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+            {columns.map(col => (
+              <DroppableColumn key={col.key} col={col}
+                tasks={filtered.filter(t => t.status === col.key)}
+                moradores={moradores} userId={userId}
+                onMove={handleMoveTask} onEdit={handleOpenEdit}
+                isOver={overColumn === col.key} fadingIds={fadingIds} />
+            ))}
+          </div>
+          <DragOverlay dropAnimation={{ duration: 180, easing: 'ease' }}>
+            {activeTask ? (
+              <TaskCardInner task={activeTask} moradores={moradores} userId={userId}
+                onMove={() => Promise.resolve()} onEdit={() => {}} isDragOverlay />
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       </div>
     </div>
   )

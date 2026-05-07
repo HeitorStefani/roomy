@@ -12,7 +12,7 @@ export async function getTarefasData() {
 
   const houseId = profile.house_id
 
-  const [{ rows: moradores }, { rows: tasks }, { rows: history }] = await Promise.all([
+  const [{ rows: moradores }, { rows: tasks }] = await Promise.all([
     query<{ id: string; name: string; avatar_color: string | null }>(
       'select id, name, avatar_color from users where house_id = $1 order by name asc',
       [houseId],
@@ -38,15 +38,6 @@ export async function getTarefasData() {
        order by due_date asc nulls last`,
       [houseId],
     ),
-    query<{ id: string; task_title: string | null; done_by: string; done_at: string }>(
-      `select th.id, t.title as task_title, th.done_by, th.done_at
-       from task_history th
-       left join tasks t on t.id = th.task_id
-       where t.house_id = $1 or t.house_id is null
-       order by th.done_at desc
-       limit 20`,
-      [houseId],
-    ),
   ])
 
   return JSON.parse(JSON.stringify({
@@ -66,14 +57,6 @@ export async function getTarefasData() {
       overdue:         t.overdue,
       rotationMembers: t.rotation_members ?? [],
       weekDays:        t.week_days ?? [],
-    })),
-    history: history.map(h => ({
-      id:        h.id,
-      taskTitle: h.task_title ?? '-',
-      doneBy:    h.done_by,
-      doneAt:    new Date(h.done_at).toLocaleDateString('pt-BR', {
-        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-      }),
     })),
   }))
 }
