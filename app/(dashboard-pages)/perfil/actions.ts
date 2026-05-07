@@ -1,7 +1,9 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { query } from '@/lib/db'
+import { emitN8nEvent } from '@/lib/n8n'
+import { saveUploadedFile } from '@/lib/storage'
 
 export async function updateProfile(data: {
   userId: string
@@ -10,44 +12,29 @@ export async function updateProfile(data: {
   emailNotificacao: string | null
   pixKey: string | null
 }) {
-  const supabase = await createClient()
+  await query(
+    `update users
+     set name = $1, avatar_color = $2, email_notificacao = $3, pix_key = $4, updated_at = now()
+     where id = $5`,
+    [data.name, data.avatarColor, data.emailNotificacao, data.pixKey, data.userId],
+  )
 
-  await supabase
-    .from('users')
-    .update({
-      name:              data.name,
-      avatar_color:      data.avatarColor,
-      email_notificacao: data.emailNotificacao,
-      pix_key:           data.pixKey,
-    })
-    .eq('id', data.userId)
-
+  await emitN8nEvent('profile.updated', { userId: data.userId })
   revalidatePath('/perfil')
 }
 
 export async function uploadAvatar(formData: FormData) {
-  const supabase = await createClient()
-
-  const file   = formData.get('file') as File
+  const file = formData.get('file') as File
   const userId = formData.get('userId') as string
 
-  if (!file || !userId) return { error: 'Dados inválidos.' }
+  if (!file || !userId) return { error: 'Dados invalidos.' }
 
-  const ext      = file.name.split('.').pop() ?? 'jpg'
-  const filePath = `avatars/${userId}.${ext}`
-  const buffer   = Buffer.from(await file.arrayBuffer())
+  const saved = await saveUploadedFile('avatars', file, userId)
+  const urlWithCache = `${saved.publicUrl}?t=${Date.now()}`
 
-  const { error: uploadError } = await supabase.storage
-    .from('avatars')
-    .upload(filePath, buffer, { contentType: file.type, upsert: true })
+  await query('update users set avatar_url = $1, updated_at = now() where id = $2', [urlWithCache, userId])
 
-  if (uploadError) return { error: 'Erro ao fazer upload: ' + uploadError.message }
-
-  const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath)
-  const urlWithCache = `${publicUrl}?t=${Date.now()}`
-
-  await supabase.from('users').update({ avatar_url: urlWithCache }).eq('id', userId)
-
+  await emitN8nEvent('profile.updated', { userId, avatarUrl: urlWithCache })
   revalidatePath('/perfil')
   return { url: urlWithCache }
 }

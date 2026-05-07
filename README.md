@@ -1,36 +1,143 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Roomy 🏡
 
-## Getting Started
+Sistema gerenciador de república com bot Telegram proativo, dashboard web e automações via n8n.
 
-First, run the development server:
+## Features
 
+**🤖 Bot Telegram Automatizado:**
+- Cobra tarefas atrasadas (diário 8h)
+- Cobra contas vencidas com Pix (diário 20h)
+- Alerta estoque baixo (diário 8h)
+- Resumo semanal (segunda 9h)
+- Comandos interativos (criar tarefa, pagar conta, ler NFC-e)
+
+**📊 Dashboard Web:**
+- Tarefas (criar, atribuir, concluir, recorrência)
+- Contas (dividir, pagar, comprovante)
+- Estoque (casa + pessoal, alertas)
+- Transações pessoais + orçamento
+- NFC-e (ler QR code, dividir automaticamente)
+
+**⚙️ Stack:**
+- Next.js 16 (Turbopack)
+- PostgreSQL 16
+- n8n (automação)
+- Docker Compose
+
+## Quick Start
+
+**Dev local:**
 ```bash
+npm install
+cp .env.local.example .env.local
+docker-compose up -d db
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Acesse http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**Produção (Docker):**
+```bash
+cp .env.example .env
+# Edit .env (troque senhas/tokens)
+docker-compose up -d --build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+**Setup completo (Telegram + workflows):**
+Ver [ROOMY_SETUP.md](./ROOMY_SETUP.md)
 
-## Learn More
+## Workflows n8n
 
-To learn more about Next.js, take a look at the following resources:
+Importar em n8n UI:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **roomy-telegram-bot.json** - Bot interativo (comandos manuais)
+2. **roomy-manager-agent.json** - Gerente automático (notificações agendadas)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Configure credentials Telegram e HTTP Auth antes de ativar.
 
-## Deploy on Vercel
+## API Routes (n8n)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Autenticação: `Authorization: Bearer $N8N_API_TOKEN`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**Telegram:**
+- `POST /api/n8n/telegram/link` - vincular chat
+- `GET /api/n8n/context?telegramChatId=...` - dados usuário
+
+**Tarefas:**
+- `GET /api/n8n/tasks?telegramChatId=...`
+- `POST /api/n8n/tasks` - actions: complete, create
+
+**Contas:**
+- `GET /api/n8n/bills?telegramChatId=...`
+- `POST /api/n8n/bills` - actions: mark-paid, create
+
+**Estoque:**
+- `GET /api/n8n/stock?telegramChatId=...`
+- `POST /api/n8n/stock` - actions: add, quantity, shopping-list
+
+**NFC-e:**
+- `POST /api/n8n/nfce` - processa link QR code
+
+**Manager (automação):**
+- `GET /api/n8n/manager/overdue-tasks`
+- `GET /api/n8n/manager/overdue-bills`
+- `GET /api/n8n/manager/low-stock`
+- `GET /api/n8n/manager/weekly-summary`
+
+## Comandos Telegram
+
+```
+/vincular SEU_RA - conectar Telegram
+/tarefas - listar pendentes
+/concluir TASK_ID - marcar feito
+/contas - listar suas contas
+/pagar PARTICIPANT_ID - marcar pago
+/estoque - ver itens baixos
+/tarefa titulo | local | prioridade | 2026-05-10
+/conta titulo | 150.50 | 2026-05-15
+Cole link NFC-e - ler nota fiscal
+```
+
+## Estrutura
+
+```
+app/
+├── (dashboard-pages)/  # páginas autenticadas
+├── api/n8n/           # rotas para n8n
+├── login/             # auth
+db/init/               # schema SQL inicial
+lib/                   # db, auth, n8n utils
+queries/               # queries reutilizáveis
+workflows/             # n8n workflows JSON
+```
+
+## Env Vars
+
+**.env.local (dev):**
+```
+DATABASE_URL=postgresql://roomy:roomy@localhost:5433/roomy
+AUTH_SECRET=seu-secret-jwt
+N8N_API_TOKEN=seu-token
+```
+
+**.env (docker):**
+```
+POSTGRES_PASSWORD=senha-forte
+AUTH_SECRET=secret-forte
+N8N_API_TOKEN=token-forte
+N8N_ENCRYPTION_KEY=key-forte
+PUBLIC_BASE_URL=https://seu-dominio.com
+ROOMY_BASE_URL=http://app:3000
+```
+
+## Banco Inicial
+
+Casa padrão criada em `db/init/01-roomy-schema.sql`:
+- Nome: Republica Roomy
+- Código convite: `ROOMY2026`
+
+Use código no signup ou crie usuário via SQL.
+
+## Licença
+
+MIT

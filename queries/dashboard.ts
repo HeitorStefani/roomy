@@ -1,192 +1,157 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentUser, getUserProfile } from '@/lib/auth'
+import { query } from '@/lib/db'
 
 export async function getDashboardData() {
-  const supabase = await createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getCurrentUser()
   if (!user) return null
 
-  const { data: profile } = await supabase
-    .from('users')
-    .select('id, name, avatar_color, house_id')
-    .eq('id', user.id)
-    .single()
-
+  const profile = await getUserProfile(user.id)
   if (!profile?.house_id) return null
 
   const houseId = profile.house_id
   const now = new Date()
   const firstDayThisMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
-  const lastDayThisMonth  = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
+  const lastDayThisMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
   const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0]
-  const lastDayLastMonth  = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0]
+  const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0]
 
   const [
-    tasksRes, stockRes, billsRes,
-    txThisRes, txLastRes, txChartThisRes, txChartLastRes,
+    { rows: tasksRaw },
+    { rows: stockRaw },
+    { rows: billsRaw },
+    { rows: txThis },
+    { rows: txLast },
+    { rows: txChartThis },
+    { rows: txChartLast },
+    { rows: shoppingRows },
   ] = await Promise.all([
-    // ── Tarefas: só as atribuídas ao usuário, incluindo categoria e due_date
-    supabase.from('tasks')
-      .select('id, title, due_date, priority, status, overdue, room')
-      .eq('house_id', houseId)
-      .eq('assigned_to', user.id)
-      .neq('status', 'done')
-      .order('due_date', { ascending: true })
-      .limit(4),
-
-    supabase.from('stock_items').select('id, name, quantity, min_quantity')
-      .eq('house_id', houseId).is('owner_id', null).order('quantity', { ascending: true }).limit(10),
-
-    // ── Contas: inclui due_date para mostrar vencimento
-    supabase.from('house_bills')
-      .select(`id, title, total, paid_by, due_date, bill_participants(user_id, amount, paid, users(name, avatar_color))`)
-      .eq('house_id', houseId)
-      .gte('due_date', firstDayThisMonth)
-      .lte('due_date', lastDayThisMonth),
-
-    supabase.from('personal_transactions').select('amount, type')
-      .eq('user_id', user.id).gte('date', firstDayThisMonth).lte('date', lastDayThisMonth),
-
-    supabase.from('personal_transactions').select('amount, type')
-      .eq('user_id', user.id).gte('date', firstDayLastMonth).lte('date', lastDayLastMonth),
-
-    // ── Gráfico: todos os dias do mês, não só pontos fixos
-    supabase.from('personal_transactions').select('amount, date')
-      .eq('user_id', user.id).eq('type', 'expense')
-      .gte('date', firstDayThisMonth).lte('date', lastDayThisMonth)
-      .order('date', { ascending: true }),
-
-    supabase.from('personal_transactions').select('amount, date')
-      .eq('user_id', user.id).eq('type', 'expense')
-      .gte('date', firstDayLastMonth).lte('date', lastDayLastMonth)
-      .order('date', { ascending: true }),
+    query<{ id: string; title: string; due_date: string | null; priority: string; status: string; overdue: boolean; room: string | null }>(
+      `select id, title, due_date, priority, status, overdue, room
+       from tasks
+       where house_id = $1 and assigned_to = $2 and status <> 'done'
+       order by due_date asc nulls last
+       limit 4`,
+      [houseId, user.id],
+    ),
+    query<{ id: string; name: string; quantity: number; min_quantity: number }>(
+      `select id, name, quantity, min_quantity
+       from stock_items
+       where house_id = $1 and owner_id is null
+       order by quantity asc
+       limit 10`,
+      [houseId],
+    ),
+    query<{
+      id: string; title: string; total: number; paid_by: string; due_date: string
+      user_id: string; amount: number; paid: boolean; user_name: string; avatar_color: string | null
+    }>(
+      `select hb.id, hb.title, hb.total, hb.paid_by, hb.due_date,
+              bp.user_id, bp.amount, bp.paid, u.name as user_name, u.avatar_color
+       from house_bills hb
+       left join bill_participants bp on bp.bill_id = hb.id
+       left join users u on u.id = bp.user_id
+       where hb.house_id = $1 and hb.due_date >= $2 and hb.due_date <= $3`,
+      [houseId, firstDayThisMonth, lastDayThisMonth],
+    ),
+    query<{ amount: number; type: 'expense' | 'income' }>(
+      'select amount, type from personal_transactions where user_id = $1 and date >= $2 and date <= $3',
+      [user.id, firstDayThisMonth, lastDayThisMonth],
+    ),
+    query<{ amount: number; type: 'expense' | 'income' }>(
+      'select amount, type from personal_transactions where user_id = $1 and date >= $2 and date <= $3',
+      [user.id, firstDayLastMonth, lastDayLastMonth],
+    ),
+    query<{ amount: number; date: string }>(
+      `select amount, date from personal_transactions
+       where user_id = $1 and type = 'expense' and date >= $2 and date <= $3
+       order by date asc`,
+      [user.id, firstDayThisMonth, lastDayThisMonth],
+    ),
+    query<{ amount: number; date: string }>(
+      `select amount, date from personal_transactions
+       where user_id = $1 and type = 'expense' and date >= $2 and date <= $3
+       order by date asc`,
+      [user.id, firstDayLastMonth, lastDayLastMonth],
+    ),
+    query<{ count: string }>(
+      'select count(*) from stock_items where house_id = $1 and in_shopping_list = true',
+      [houseId],
+    ),
   ])
 
-  // ── Gastos ──────────────────────────────────────────────────────────────
-  const txThis = txThisRes.data ?? []
-  const txLast = txLastRes.data ?? []
-  const gastoEsseMes    = txThis.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
-  const gastoMesPassado = txLast.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
-  const trendNum     = gastoMesPassado > 0 ? Math.round(((gastoEsseMes - gastoMesPassado) / gastoMesPassado) * 100) : 0
-  const trendGasto   = `${trendNum > 0 ? '+' : ''}${trendNum}%`
-  const trendGastoUp = trendNum > 0
+  const gastoEsseMes = txThis.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount), 0)
+  const gastoMesPassado = txLast.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount), 0)
+  const trendNum = gastoMesPassado > 0 ? Math.round(((gastoEsseMes - gastoMesPassado) / gastoMesPassado) * 100) : 0
 
-  // ── Gráfico: acumulado diário com todos os dias que tiveram gasto ────────
-  const buildChartData = (
-    txsThis: { amount: number; date: string }[],
-    txsLast: { amount: number; date: string }[],
-  ) => {
-    // Agrupa por dia do mês (ex: "05" → total)
-    const groupByDay = (txs: { amount: number; date: string }[]) => {
-      const map: Record<string, number> = {}
-      for (const tx of txs) {
-        const day = tx.date.slice(8, 10) // "2024-01-05" → "05"
-        map[day] = (map[day] ?? 0) + tx.amount
-      }
-      return map
+  const groupByDay = (txs: { amount: number; date: string }[]) => {
+    const map: Record<string, number> = {}
+    for (const tx of txs) {
+      const day = String(tx.date).slice(8, 10)
+      map[day] = (map[day] ?? 0) + Number(tx.amount)
     }
-
-    const thisMap = groupByDay(txsThis)
-    const lastMap = groupByDay(txsLast)
-
-    // Gera todos os dias do mês atual que existem em qualquer um dos dois meses
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
-    const today = now.getDate()
-
-    const result = []
-    for (let d = 1; d <= daysInMonth; d++) {
-      const day = String(d).padStart(2, '0')
-      // Não projeta dias futuros do mês atual
-      if (d > today) break
-      result.push({
-        dia:           day,
-        gasto:         thisMap[day] ?? 0,
-        semanaPassada: lastMap[day] ?? 0,
-      })
-    }
-    return result
+    return map
   }
-
-  const expenseChartData = buildChartData(
-    txChartThisRes.data ?? [],
-    txChartLastRes.data ?? [],
-  )
-
-  // ── Tarefas ──────────────────────────────────────────────────────────────
-  const tasksRaw = tasksRes.data ?? []
-  const overdueTasks = tasksRaw.filter(t => t.overdue).length
+  const thisMap = groupByDay(txChartThis)
+  const lastMap = groupByDay(txChartLast)
+  const expenseChartData = []
+  for (let d = 1; d <= now.getDate(); d++) {
+    const day = String(d).padStart(2, '0')
+    expenseChartData.push({ dia: day, gasto: thisMap[day] ?? 0, semanaPassada: lastMap[day] ?? 0 })
+  }
 
   const tasks = tasksRaw.map(t => ({
     id:       t.id,
     title:    t.title,
-    category: (t.room as string) ?? 'Geral',
-    dueDate:  t.due_date ?? null,
-    date:     t.due_date
-      ? new Date(t.due_date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-      : '—',
-    priority: t.priority as 'alta' | 'média' | 'baixa',
+    category: t.room ?? 'Geral',
+    dueDate:  t.due_date,
+    date:     t.due_date ? new Date(`${t.due_date}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '-',
+    priority: t.priority,
     overdue:  !!t.overdue,
     done:     t.status === 'done',
   }))
 
-  // ── Estoque ──────────────────────────────────────────────────────────────
-  const lowStock = (stockRes.data ?? []).filter(i => i.quantity < i.min_quantity)
-
-  // ── Contas ───────────────────────────────────────────────────────────────
-  const bills = billsRes.data ?? []
-  const totalCasa = bills.reduce((s, b) => s + b.total, 0)
-  const pendingBillsCount = bills.filter(b =>
-    (b.bill_participants as any[]).some(p => !p.paid)
-  ).length
-
-  // Quanto EU devo a outros (não paguei, e não fui eu quem pagou a conta)
-  const iOwe = bills.flatMap(b =>
-    (b.bill_participants as any[])
-      .filter(p => p.user_id === user.id && !p.paid && b.paid_by !== user.id)
-      .map(p => ({
-        billTitle: b.title as string,
-        dueDate:   b.due_date as string,
-        amount:    p.amount as number,
-        paidByName: (b.bill_participants as any[]).find((x: any) => x.user_id === b.paid_by)?.users?.name ?? 'Alguém',
-        paidByColor: (b.bill_participants as any[]).find((x: any) => x.user_id === b.paid_by)?.users?.avatar_color ?? 'bg-zinc-600',
-      }))
-  )
-
-  // Quem me deve (eu paguei, outros não pagaram)
-  const debtors = bills.flatMap(b =>
-    (b.bill_participants as any[])
-      .filter(p => !p.paid && p.user_id !== user.id && b.paid_by === user.id)
-      .map(p => ({
-        name:      p.users.name as string,
-        color:     p.users.avatar_color as string,
-        amount:    p.amount as number,
-        billTitle: b.title as string,
-        dueDate:   b.due_date as string,
-      }))
-  )
-
-  const { count: shoppingCount } = await supabase
-    .from('stock_items').select('*', { count: 'exact', head: true })
-    .eq('house_id', houseId).eq('in_shopping_list', true)
+  const billMap = new Map<string, typeof billsRaw>()
+  for (const row of billsRaw) billMap.set(row.id, [...(billMap.get(row.id) ?? []), row])
+  const billGroups = Array.from(billMap.values())
+  const totalCasa = billGroups.reduce((s, rows) => s + Number(rows[0].total), 0)
+  const pendingBillsCount = billGroups.filter(rows => rows.some(p => !p.paid)).length
+  const iOwe = billGroups.flatMap(rows => rows
+    .filter(p => p.user_id === user.id && !p.paid && p.paid_by !== user.id)
+    .map(p => ({
+      billTitle: p.title,
+      dueDate: p.due_date,
+      amount: Number(p.amount),
+      paidByName: rows.find(x => x.user_id === p.paid_by)?.user_name ?? 'Alguem',
+      paidByColor: rows.find(x => x.user_id === p.paid_by)?.avatar_color ?? 'bg-zinc-600',
+    })))
+  const debtors = billGroups.flatMap(rows => rows
+    .filter(p => !p.paid && p.user_id !== user.id && p.paid_by === user.id)
+    .map(p => ({
+      name: p.user_name,
+      color: p.avatar_color ?? 'bg-zinc-600',
+      amount: Number(p.amount),
+      billTitle: p.title,
+      dueDate: p.due_date,
+    })))
 
   return JSON.parse(JSON.stringify({
     profile,
     stats: {
       gastoEsseMes,
-      trendGasto,
-      trendGastoUp,
+      trendGasto: `${trendNum > 0 ? '+' : ''}${trendNum}%`,
+      trendGastoUp: trendNum > 0,
       tarefasRestantes: tasks.length,
-      overdueTasks,
-      shoppingCount: shoppingCount ?? 0,
+      overdueTasks: tasksRaw.filter(t => t.overdue).length,
+      shoppingCount: Number(shoppingRows[0]?.count ?? 0),
       totalCasa,
       pendingBillsCount,
-      totalIOwe:       iOwe.reduce((s, x) => s + x.amount, 0),
-      totalToReceive:  debtors.reduce((s, d) => s + d.amount, 0),
+      totalIOwe: iOwe.reduce((s, x) => s + x.amount, 0),
+      totalToReceive: debtors.reduce((s, d) => s + d.amount, 0),
     },
     tasks,
-    lowStock,
+    lowStock: stockRaw.filter(i => Number(i.quantity) < Number(i.min_quantity)),
     debtors,
     iOwe,
     expenseChartData,

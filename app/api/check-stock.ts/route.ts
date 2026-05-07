@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { query } from '@/lib/db'
 
 function normalizeStr(s: string) {
   return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim()
@@ -16,24 +16,23 @@ function similarity(a: string, b: string) {
 export async function POST(req: NextRequest) {
   const { houseId, userId, items } = await req.json()
 
-  const supabase = await createClient()
-  const { data: stockItems } = await supabase
-    .from('stock_items')
-    .select('id, name')
-    .eq('house_id', houseId)
-    .or(`owner_id.is.null,owner_id.eq.${userId}`)
+  const { rows: stockItems } = await query<{ id: string; name: string }>(
+    `select id, name from stock_items
+     where house_id = $1 and (owner_id is null or owner_id = $2)`,
+    [houseId, userId],
+  )
 
-  const matched: string[]   = []
+  const matched: string[] = []
   const unmatched: string[] = []
 
   for (const item of items as { name: string }[]) {
     const norm = normalizeStr(item.name)
-    const hit  = (stockItems ?? []).find(s => {
+    const hit = stockItems.find(s => {
       const sn = normalizeStr(s.name)
       return sn === norm || norm.includes(sn) || sn.includes(norm) || similarity(norm, sn) >= 0.6
     })
     if (hit) matched.push(item.name)
-    else     unmatched.push(item.name)
+    else unmatched.push(item.name)
   }
 
   return NextResponse.json({ matched, unmatched })

@@ -1,26 +1,19 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentUser, getUserProfile } from '@/lib/auth'
+import { query } from '@/lib/db'
 import PerfilClient from './perfil-client'
 
 export default async function PerfilPage() {
-  const supabase = await createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getCurrentUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase
-    .from('users')
-    .select('id, name, avatar_color, avatar_url, house_id, email_notificacao, pix_key')
-    .eq('id', user.id)
-    .single()
-
+  const profile = await getUserProfile(user.id)
   if (!profile) redirect('/login')
 
-  const { data: house } = await supabase
-    .from('houses')
-    .select('name')
-    .eq('id', profile.house_id)
-    .single()
+  const { rows } = await query<{ name: string }>(
+    'select name from houses where id = $1 limit 1',
+    [profile.house_id],
+  )
 
   return (
     <PerfilClient
@@ -29,7 +22,7 @@ export default async function PerfilPage() {
         name:             profile.name,
         avatarColor:      profile.avatar_color ?? 'bg-zinc-500',
         avatarUrl:        profile.avatar_url ?? null,
-        houseName:        house?.name ?? '—',
+        houseName:        rows[0]?.name ?? '-',
         emailNotificacao: profile.email_notificacao ?? null,
         pixKey:           profile.pix_key ?? null,
       }}

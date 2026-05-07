@@ -1,88 +1,69 @@
 'use server'
 
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { clearSession, createSession, hashPassword, verifyPassword } from '@/lib/auth'
+import { query } from '@/lib/db'
 
 const toEmail = (ra: string) => `${ra.trim()}@republica.app`
 
 export async function login(formData: FormData) {
-  const supabase = await createClient()
-  const ra       = formData.get('ra') as string
-  const password = formData.get('password') as string
+  const ra = String(formData.get('ra') ?? '').trim()
+  const password = String(formData.get('password') ?? '')
 
-  const { error } = await supabase.auth.signInWithPassword({
-    email: toEmail(ra),
-    password,
-  })
+  const { rows } = await query<{ id: string; ra: string; password_hash: string }>(
+    'select id, ra, password_hash from users where ra = $1 limit 1',
+    [ra],
+  )
 
-  if (error) redirect('/login?error=RA+ou+senha+inválidos')
+  const user = rows[0]
+  if (!user || !verifyPassword(password, user.password_hash)) {
+    redirect('/login?error=RA+ou+senha+invalidos')
+  }
+
+  await createSession({ id: user.id, ra: user.ra })
   redirect('/dashboard')
 }
 
 export async function signup(formData: FormData) {
-  const supabase = await createClient()
+  const ra = String(formData.get('ra') ?? '').trim()
+  const password = String(formData.get('password') ?? '')
+  const name = String(formData.get('name') ?? '').trim()
+  const inviteCode = String(formData.get('invite_code') ?? '').trim().toUpperCase()
 
-  const ra         = formData.get('ra') as string
-  const password   = formData.get('password') as string
-  const name       = formData.get('name') as string
-  const inviteCode = formData.get('invite_code') as string
+  const { rows: houses } = await query<{ id: string }>(
+    'select id from houses where invite_code = $1 limit 1',
+    [inviteCode],
+  )
 
-  // ── LOG 1: o que chegou do formulário
-  console.log('=== SIGNUP DEBUG ===')
-  console.log('RA:', ra)
-  console.log('Nome:', name)
-  console.log('Código digitado:', inviteCode)
-  console.log('Código após trim/upper:', inviteCode?.trim().toUpperCase())
-
-  // ── LOG 2: testa a conexão listando todas as casas
-  const { data: allHouses, error: listError } = await supabase
-    .from('houses')
-    .select('id, name, invite_code')
-
-  console.log('Erro ao listar casas:', listError)
-  console.log('Casas encontradas:', allHouses)
-
-  // ── LOG 3: tenta buscar pelo código
-  const { data: house, error: houseError } = await supabase
-    .from('houses')
-    .select('id')
-    .eq('invite_code', inviteCode?.trim().toUpperCase())
-    .single()
-
-  console.log('Erro na busca por código:', houseError)
-  console.log('Casa encontrada:', house)
-  console.log('===================')
-
-  if (houseError || !house) {
-    redirect('/login?mode=signup&error=Código+de+convite+inválido')
+  const house = houses[0]
+  if (!house) {
+    redirect('/login?mode=signup&error=Codigo+de+convite+invalido')
   }
 
-  const { data, error: authError } = await supabase.auth.signUp({
-    email:    toEmail(ra),
-    password,
-  })
+  try {
+    const { rows: counts } = await query<{ count: string }>(
+      'select count(*) from users where house_id = $1',
+      [house.id],
+    )
+    const role = Number(counts[0]?.count ?? 0) === 0 ? 'admin' : 'member'
 
-  if (authError || !data.user) {
-    redirect('/login?mode=signup&error=Erro+ao+criar+conta.+RA+já+cadastrado?')
-  }
+    const { rows } = await query<{ id: string }>(
+      `insert into users (ra, email, password_hash, house_id, name, avatar_color, role)
+       values ($1, $2, $3, $4, $5, 'bg-zinc-500', $6)
+       returning id`,
+      [ra, toEmail(ra), hashPassword(password), house.id, name, role],
+    )
 
-  const { error: profileError } = await supabase.from('users').insert({
-    id:           data.user.id,
-    house_id:     house.id,
-    name:         name.trim(),
-    avatar_color: 'bg-zinc-500',
-  })
-
-  if (profileError) {
-    console.log('Erro ao salvar perfil:', profileError)
-    redirect('/login?mode=signup&error=Erro+ao+salvar+perfil')
+    await createSession({ id: rows[0].id, ra })
+  } catch (error) {
+    console.error('signup error:', error)
+    redirect('/login?mode=signup&error=Erro+ao+criar+conta.+RA+ja+cadastrado?')
   }
 
   redirect('/dashboard')
 }
 
 export async function logout() {
-  const supabase = await createClient()
-  await supabase.auth.signOut()
+  await clearSession()
   redirect('/login')
 }

@@ -76,8 +76,10 @@ const columns: { key: Status; label: string; icon: any; accent: string; bg: stri
 const DONE_LINGER_MS = 3500
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function parseDateLocal(str: string): Date {
-  const [y, m, d] = str.split('-').map(Number)
+function parseDateLocal(str: any): Date {
+  if (!str) return new Date()
+  const s = typeof str === 'string' ? str.split('T')[0] : new Date(str).toISOString().split('T')[0]
+  const [y, m, d] = s.split('-').map(Number)
   return new Date(y, m - 1, d)
 }
 

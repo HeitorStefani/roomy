@@ -1,0 +1,17 @@
+{
+  "status": "commited",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:3000",
+  "executionArgs": {
+    "projectName": "roomy",
+    "projectPath": "c:\\Users\\Heitor\\Desktop\\programacao\\roomy",
+    "testIds": [],
+    "additionalInstruction": "",
+    "serverMode": "development",
+    "envs": {
+      "API_KEY": "sk-user-FmBeoOgAfo4QuO5MDTi4YzgWTNL_moSttjXX_RaeUgtwe1DiiJLeCOeyH-Vta0tBBuZiAmPLITuoPYuwIvyh58Q1-TdMZCGcfXPnZRkOSCqgsUQ-DcfBZuV20JYKu5fEC4g"
+    }
+  },
+  "serverPort": 60169
+}

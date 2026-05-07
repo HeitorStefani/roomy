@@ -1,0 +1,70 @@
+version: "2"
+type: frontend
+tech_stack:
+  - nextjs 16
+  - react
+  - tailwindcss
+  - postcss
+  - lucide-react
+  - recharts
+routes:
+  - path: /login
+    file: app/login/page.tsx
+    auth_required: false
+    description: User login page
+  - path: /dashboard
+    file: app/(dashboard-pages)/dashboard/page.tsx
+    auth_required: true
+    description: Main dashboard
+  - path: /tarefas
+    file: app/(dashboard-pages)/tarefas/page.tsx
+    auth_required: true
+    description: Tasks management page
+  - path: /contas
+    file: app/(dashboard-pages)/contas/page.tsx
+    auth_required: true
+    description: Bills management page
+  - path: /estoque
+    file: app/(dashboard-pages)/estoque/page.tsx
+    auth_required: true
+    description: Stock management page
+features:
+  - name: User Login
+    description: Login with email and password credentials
+    files:
+      - app/login/page.tsx
+    entry_route: /login
+    user_interactions:
+      - Fill email input field
+      - Fill password input field
+      - Click Login button to submit
+    api_calls:
+      - method: POST
+        endpoint: /api/auth/login
+    auth_required: false
+  - name: Task Management
+    description: Create, assign, and complete tasks
+    files:
+      - app/(dashboard-pages)/tarefas/page.tsx
+    entry_route: /tarefas
+    user_interactions:
+      - View list of tasks
+      - Click complete task
+      - Create new task
+    api_calls:
+      - method: GET
+        endpoint: /api/n8n/tasks
+    auth_required: true
+  - name: Bill Management
+    description: Manage and pay bills
+    files:
+      - app/(dashboard-pages)/contas/page.tsx
+    entry_route: /contas
+    user_interactions:
+      - View list of bills
+      - Mark bill as paid
+    api_calls:
+      - method: GET
+        endpoint: /api/n8n/bills
+    auth_required: true
+known_limitations: []

@@ -10,6 +10,7 @@ import {
 import {
   Home, BookOpen, ClipboardList, Crown, BoxIcon,
   Newspaper, LogOut, UserCircle,
+  Shield,
 } from "lucide-react"
 import { Button } from "./ui/button"
 import { logout } from "@/app/login/actions"
@@ -18,6 +19,7 @@ type SidebarUser = {
   name: string
   avatarColor: string
   avatarUrl: string | null
+  isAdmin?: boolean
 }
 
 export function AppSidebar({ user }: { user?: SidebarUser }) {
@@ -79,6 +81,16 @@ export function AppSidebar({ user }: { user?: SidebarUser }) {
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
+
+            {user?.isAdmin && (
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <Link href="/admin" onClick={handleClick}>
+                    <Shield className="w-4 h-4" /><span>Admin</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>

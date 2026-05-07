@@ -1,0 +1,807 @@
+[
+  {
+    "id": "TC001",
+    "title": "Sign in and reach the dashboard",
+    "description": "This test verifies that a resident can sign in with valid credentials and land on the household dashboard after authentication.",
+    "category": "User Login",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user lands on the dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify household summary content is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC002",
+    "title": "Complete a household task",
+    "description": "This test verifies that a signed-in resident can complete a task from the task list and see it marked as completed.",
+    "category": "Task Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the tasks section link"
+      },
+      {
+        "type": "action",
+        "description": "Click a task completion control"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the task is shown as completed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the task list remains visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC003",
+    "title": "Protect dashboard access before sign-in",
+    "description": "This test verifies that an unauthenticated user cannot directly access the dashboard and can then sign in to continue.",
+    "category": "Bill Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access is blocked or redirected to sign in"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the dashboard is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC004",
+    "title": "Review bills and mark one as paid",
+    "description": "This test verifies that an admin can open the bills page, mark a bill as paid, and see the paid status update.",
+    "category": "Bill Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the bills section link"
+      },
+      {
+        "type": "action",
+        "description": "Click a bill payment control"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the bill is shown as paid"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the bill list remains visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC005",
+    "title": "Mark a bill as paid",
+    "description": "This test verifies that a house admin can open the bills page and update an unpaid bill to paid status.",
+    "category": "Bill Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Open the bills page"
+      },
+      {
+        "type": "action",
+        "description": "Mark a bill as paid"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a paid bill status is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated bill remains visible in the list"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC006",
+    "title": "Block direct access to protected pages before sign-in",
+    "description": "This test verifies that an unauthenticated user cannot open a protected page directly and is prompted to sign in before continuing.",
+    "category": "Authentication and Access Control",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access is blocked or the user is redirected to sign in"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user lands on the dashboard"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC007",
+    "title": "Review household dashboard summary",
+    "description": "This test verifies that a signed-in user can view the household dashboard summary after logging in.",
+    "category": "Bill Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the dashboard is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify dashboard summary content is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC008",
+    "title": "View the household dashboard summary",
+    "description": "This test verifies that a signed-in user can open the dashboard and review the household summary and charts.",
+    "category": "Dashboard Overview",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the dashboard link"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify household summary content is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify dashboard charts are displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC009",
+    "title": "Access the stock page and review inventory status",
+    "description": "This test verifies that a signed-in resident can open the stock page and see inventory levels and low-stock alerts.",
+    "category": "Stock Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Open the stock page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify stock items are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify low-stock alerts are displayed when applicable"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC010",
+    "title": "Browse tasks on the task list",
+    "description": "This test verifies that a signed-in user can open the tasks page and view the household task list.",
+    "category": "Task Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the tasks section link"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the task list is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify task items are visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC011",
+    "title": "Browse the bills list",
+    "description": "This test verifies that a signed-in user can open the bills page and view the household bills list.",
+    "category": "Bill Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Open the bills page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the bills list is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify bill status information is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC012",
+    "title": "Open stock and review low-stock alerts",
+    "description": "This test verifies that a signed-in resident can view stock levels and low-stock alerts on the stock page.",
+    "category": "Stock Overview",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the stock section link"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify stock items are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify low-stock alerts are displayed when applicable"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC013",
+    "title": "Browse the bill list",
+    "description": "This test verifies that a signed-in user can open the bills page and view the household bills list.",
+    "category": "Bill Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the bills section link"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the bill list is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify bill items are visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC014",
+    "title": "Use stock insights and return to the dashboard",
+    "description": "This test verifies that a signed-in resident can review inventory on the stock page and then return to the dashboard to continue household monitoring.",
+    "category": "Dashboard Overview",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the stock section link"
+      },
+      {
+        "type": "action",
+        "description": "Click the dashboard link"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify household summary content is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify dashboard charts are displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC015",
+    "title": "Return from stock to dashboard and review household status",
+    "description": "This test verifies that a resident can check stock levels and then return to the dashboard to continue household monitoring.",
+    "category": "Stock Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Open the stock page"
+      },
+      {
+        "type": "action",
+        "description": "Open the dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the dashboard is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify household status content is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC016",
+    "title": "Create a new bill payment state update persists after navigation",
+    "description": "This test verifies that a bill marked as paid stays updated when the user returns to the bills page during the same session.",
+    "category": "Bill Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Open the bills page"
+      },
+      {
+        "type": "action",
+        "description": "Mark a bill as paid"
+      },
+      {
+        "type": "action",
+        "description": "Open the dashboard"
+      },
+      {
+        "type": "action",
+        "description": "Return to the bills page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the bill remains marked as paid"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated bill list is displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC017",
+    "title": "Create and assign a new task",
+    "description": "This test verifies that an admin can create a new task, assign it, and see it appear in the task list after saving.",
+    "category": "Task Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the tasks section link"
+      },
+      {
+        "type": "action",
+        "description": "Open the new task form"
+      },
+      {
+        "type": "action",
+        "description": "Fill in a task name"
+      },
+      {
+        "type": "action",
+        "description": "Select a household member to assign the task to"
+      },
+      {
+        "type": "action",
+        "description": "Submit the new task form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the new task appears in the task list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the assigned task is visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC018",
+    "title": "Show validation when credentials are incorrect",
+    "description": "This test verifies that invalid login credentials produce a validation message and keep the user signed out.",
+    "category": "User Login",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with invalid@example.com"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with invalid-password"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a login validation error is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user remains on the login page"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC019",
+    "title": "Show validation when password is missing",
+    "description": "This test verifies that submitting the login form without a password shows a login validation message and does not complete sign-in.",
+    "category": "User Login",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Leave the password field empty"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a login validation error is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user remains on the login page"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC020",
+    "title": "View empty bills state",
+    "description": "This test verifies that the bills page shows an empty state when there are no bills to display.",
+    "category": "Bill Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Open the bills page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an empty state message is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify no bills are listed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC021",
+    "title": "View the stock page empty state",
+    "description": "This test verifies that the stock page handles an empty inventory state without showing stock items.",
+    "category": "Stock Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Open the stock page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an empty state message is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify no stock items are listed"
+      }
+    ],
+    "priority": "Low"
+  }
+]

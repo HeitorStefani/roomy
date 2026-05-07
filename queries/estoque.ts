@@ -1,61 +1,61 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentUser, getUserProfile } from '@/lib/auth'
+import { query } from '@/lib/db'
+
+type StockRow = {
+  id: string
+  name: string
+  category: string
+  quantity: number
+  min_quantity: number
+  unit: string
+  in_shopping_list: boolean
+}
+
+function mapStock(i: StockRow, owner: 'casa' | 'pessoal') {
+  return {
+    id:             i.id,
+    name:           i.name,
+    category:       i.category,
+    quantity:       i.quantity,
+    minQuantity:    i.min_quantity,
+    unit:           i.unit,
+    owner,
+    inShoppingList: i.in_shopping_list,
+  }
+}
 
 export async function getEstoqueData() {
-  const supabase = await createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getCurrentUser()
   if (!user) return null
 
-  const { data: profile } = await supabase
-    .from('users')
-    .select('id, name, avatar_color, house_id')
-    .eq('id', user.id)
-    .single()
-
+  const profile = await getUserProfile(user.id)
   if (!profile?.house_id) return null
 
   const houseId = profile.house_id
 
-  // Itens da casa (owner_id = null)
-  const { data: casaItems } = await supabase
-    .from('stock_items')
-    .select('id, name, category, quantity, min_quantity, unit, in_shopping_list')
-    .eq('house_id', houseId)
-    .is('owner_id', null)
-    .order('name', { ascending: true })
-
-  // Itens pessoais (owner_id = user.id)
-  const { data: pessoalItems } = await supabase
-    .from('stock_items')
-    .select('id, name, category, quantity, min_quantity, unit, in_shopping_list')
-    .eq('house_id', houseId)
-    .eq('owner_id', user.id)
-    .order('name', { ascending: true })
+  const [{ rows: casaItems }, { rows: pessoalItems }] = await Promise.all([
+    query<StockRow>(
+      `select id, name, category, quantity, min_quantity, unit, in_shopping_list
+       from stock_items
+       where house_id = $1 and owner_id is null
+       order by name asc`,
+      [houseId],
+    ),
+    query<StockRow>(
+      `select id, name, category, quantity, min_quantity, unit, in_shopping_list
+       from stock_items
+       where house_id = $1 and owner_id = $2
+       order by name asc`,
+      [houseId, user.id],
+    ),
+  ])
 
   return JSON.parse(JSON.stringify({
     userId:  user.id,
-    houseId: profile.house_id,
-    casa: (casaItems ?? []).map(i => ({
-      id:             i.id,
-      name:           i.name,
-      category:       i.category,
-      quantity:       i.quantity,
-      minQuantity:    i.min_quantity,
-      unit:           i.unit,
-      owner:          'casa' as const,
-      inShoppingList: i.in_shopping_list,
-    })),
-    pessoal: (pessoalItems ?? []).map(i => ({
-      id:             i.id,
-      name:           i.name,
-      category:       i.category,
-      quantity:       i.quantity,
-      minQuantity:    i.min_quantity,
-      unit:           i.unit,
-      owner:          'pessoal' as const,
-      inShoppingList: i.in_shopping_list,
-    })),
+    houseId,
+    casa: casaItems.map(i => mapStock(i, 'casa')),
+    pessoal: pessoalItems.map(i => mapStock(i, 'pessoal')),
   }))
 }

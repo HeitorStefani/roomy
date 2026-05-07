@@ -1,45 +1,59 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentUser, getUserProfile } from '@/lib/auth'
+import { query } from '@/lib/db'
 
 export async function getTarefasData() {
-  const supabase = await createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getCurrentUser()
   if (!user) return null
 
-  const { data: profile } = await supabase
-    .from('users')
-    .select('id, name, avatar_color, house_id')
-    .eq('id', user.id)
-    .single()
-
+  const profile = await getUserProfile(user.id)
   if (!profile?.house_id) return null
 
   const houseId = profile.house_id
 
-  const { data: moradores } = await supabase
-    .from('users')
-    .select('id, name, avatar_color')
-    .eq('house_id', houseId)
-
-  const { data: tasks } = await supabase
-    .from('tasks')
-    .select('id, title, room, assigned_to, status, priority, recurrence, start_date, due_date, overdue, rotation_members, week_days')
-    .eq('house_id', houseId)
-    .order('due_date', { ascending: true })
-
-  const { data: history } = await supabase
-    .from('task_history')
-    .select('id, task_id, done_by, done_at, tasks(title)')
-    .order('done_at', { ascending: false })
-    .limit(20)
+  const [{ rows: moradores }, { rows: tasks }, { rows: history }] = await Promise.all([
+    query<{ id: string; name: string; avatar_color: string | null }>(
+      'select id, name, avatar_color from users where house_id = $1 order by name asc',
+      [houseId],
+    ),
+    query<{
+      id: string
+      title: string
+      room: string
+      assigned_to: string
+      status: string
+      priority: string
+      recurrence: string
+      start_date: string | null
+      due_date: string | null
+      overdue: boolean
+      rotation_members: string[] | null
+      week_days: number[] | null
+    }>(
+      `select id, title, room, assigned_to, status, priority, recurrence, start_date, due_date,
+              overdue, rotation_members, week_days
+       from tasks
+       where house_id = $1
+       order by due_date asc nulls last`,
+      [houseId],
+    ),
+    query<{ id: string; task_title: string | null; done_by: string; done_at: string }>(
+      `select th.id, t.title as task_title, th.done_by, th.done_at
+       from task_history th
+       left join tasks t on t.id = th.task_id
+       where t.house_id = $1 or t.house_id is null
+       order by th.done_at desc
+       limit 20`,
+      [houseId],
+    ),
+  ])
 
   return JSON.parse(JSON.stringify({
-    userId:    user.id,
+    userId: user.id,
     profile,
-    moradores: moradores ?? [],
-    tasks: (tasks ?? []).map(t => ({
+    moradores,
+    tasks: tasks.map(t => ({
       id:              t.id,
       title:           t.title,
       room:            t.room,
@@ -53,11 +67,13 @@ export async function getTarefasData() {
       rotationMembers: t.rotation_members ?? [],
       weekDays:        t.week_days ?? [],
     })),
-    history: (history ?? []).map(h => ({
+    history: history.map(h => ({
       id:        h.id,
-      taskTitle: (h.tasks as { title?: string } | null)?.title ?? '—',
+      taskTitle: h.task_title ?? '-',
       doneBy:    h.done_by,
-      doneAt:    new Date(h.done_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
+      doneAt:    new Date(h.done_at).toLocaleDateString('pt-BR', {
+        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+      }),
     })),
   }))
 }

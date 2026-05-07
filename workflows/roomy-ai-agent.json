@@ -1,0 +1,222 @@
+{
+  "name": "Roomy AI Agent Unified",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"]
+      },
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "webhookId": "roomy-ai-telegram",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "triggerAtHour": 8 },
+            { "triggerAtHour": 20 }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 200]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message ? $json.message.text : 'Gere um resumo ou cobrança das tarefas e contas em atraso da república, com bom humor.' }}",
+        "options": {
+          "systemMessage": "Você é o Roomy, o assistente inteligente da república. Você tem a função de conversar com os moradores, cobrar contas e tarefas atrasadas, gerenciar o estoque da casa e agir como um administrador gentil mas firme.\nResponda em português, de forma amigável, clara e concisa."
+        }
+      },
+      "id": "ai-agent",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [300, 100]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "id": "openai-model",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [300, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_WITH_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionId": "={{ $json.message ? $json.message.chat.id : 'cron' }}"
+      },
+      "id": "memory",
+      "name": "Window Buffer Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "name": "api_roomy_tasks",
+        "description": "Busca as tarefas pendentes da casa. Não precisa de argumentos.",
+        "method": "GET",
+        "url": "={{ $env.ROOMY_BASE_URL }}/api/n8n/tasks?telegramChatId={{ $json.message ? $json.message.chat.id : '' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "tool-tasks",
+      "name": "Roomy Tasks API",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [600, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "roomy-api-token",
+          "name": "Roomy API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "name": "api_roomy_bills",
+        "description": "Busca as contas da casa. Não precisa de argumentos.",
+        "method": "GET",
+        "url": "={{ $env.ROOMY_BASE_URL }}/api/n8n/bills?telegramChatId={{ $json.message ? $json.message.chat.id : '' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "tool-bills",
+      "name": "Roomy Bills API",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [750, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "roomy-api-token",
+          "name": "Roomy API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.message ? $json.message.chat.id : '-100000000' }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "telegram-send",
+      "name": "Telegram Send",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [700, 100],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cron Trigger": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Window Buffer Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Roomy Tasks API": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Roomy Bills API": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Telegram Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
