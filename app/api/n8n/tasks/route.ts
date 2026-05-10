@@ -38,7 +38,19 @@ export async function POST(request: Request) {
     if (!user) return jsonError('Telegram user is not linked', 404)
 
     if (body.action === 'complete') {
-      await moveTask(String(body.taskId), 'done', user.id)
+      let fullTaskId = String(body.taskId)
+      // Se o n8n/Telegram enviou um ID encurtado (ex: sem os hífens ou cortado)
+      if (fullTaskId.length < 36) {
+        const cleanId = fullTaskId.replace(/-/g, '')
+        const { rows } = await query<{ id: string }>(
+          `select id from tasks where replace(id::text, '-', '') like $1 and house_id = $2 limit 1`,
+          [`${cleanId}%`, user.house_id]
+        )
+        if (rows.length === 0) return jsonError('Task not found', 404)
+        fullTaskId = rows[0].id
+      }
+      
+      await moveTask(fullTaskId, 'done', user.id)
       return Response.json({ ok: true })
     }
 
